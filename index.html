@@ -530,7 +530,7 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
 // ============================================================
 const SUPABASE_URL = 'https://qenyxlvddmnqxcdomius.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_jMu9PAZpsbplwxS6sEz-VA_vARu1XL_';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ============================================================
 // STATE
@@ -608,7 +608,7 @@ async function submitStep1() {
 
   try {
     if (isLoginMode) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password: mdp });
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: mdp });
       if (error) throw error;
       currentUser = data.user;
       showToast('Connexion réussie !', 'success');
@@ -623,7 +623,7 @@ async function submitStep1() {
       if (!rgpd) { showToast('Merci d\'accepter le traitement de vos données.', 'error'); resetBtn1(); return; }
       if (mdp.length < 8) { setFieldError('mdp', 'Le mot de passe doit contenir au moins 8 caractères.'); resetBtn1(); return; }
 
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await supabaseClient.auth.signUp({
         email, password: mdp,
         options: { data: { prenom, nom, tel } }
       });
@@ -746,7 +746,7 @@ async function submitStep2() {
 
   // Vérification anti-doublon
   try {
-    const { data: existing } = await supabase
+    const { data: existing } = await supabaseClientClient
       .from('adherents')
       .select('id')
       .eq('nom', nom).eq('prenom', prenom).eq('date_naissance', ddn)
@@ -768,18 +768,18 @@ async function loadGroupsAndDisciplines() {
   document.getElementById('groups-loading').classList.remove('hidden');
   document.getElementById('groups-list').innerHTML = '';
 
-  const { data: disciplines, error: errD } = await supabase
+  const { data: disciplines, error: errD } = await supabaseClient
     .from('disciplines').select('*').eq('actif', true).order('nom');
   if (errD) { showToast('Erreur chargement disciplines : ' + errD.message, 'error'); return; }
   disciplinesData = disciplines;
 
-  const { data: groups, error: errG } = await supabase
+  const { data: groups, error: errG } = await supabaseClient
     .from('groupes').select('*').eq('actif', true).order('nom');
   if (errG) { showToast('Erreur chargement groupes : ' + errG.message, 'error'); return; }
   groupsData = groups;
 
   // Compte les inscriptions validées par groupe pour disponibilité réelle
-  const { data: inscriptions } = await supabase
+  const { data: inscriptions } = await supabaseClient
     .from('inscriptions').select('groupe_id').eq('statut', 'valide');
   const counts = {};
   (inscriptions || []).forEach(i => { counts[i.groupe_id] = (counts[i.groupe_id] || 0) + 1; });
@@ -1040,7 +1040,7 @@ async function submitInscription() {
   try {
     // 1. Créer l'adhérent
     const droitImage = document.querySelector('input[name="droit-image"]:checked')?.value || 'non';
-    const { data: adh, error: adhErr } = await supabase.from('adherents').insert({
+    const { data: adh, error: adhErr } = await supabaseClient.from('adherents').insert({
       user_id: currentUser.id,
       prenom: adherentData.prenom,
       nom: adherentData.nom,
@@ -1056,13 +1056,13 @@ async function submitInscription() {
     if (adhErr) throw adhErr;
 
     // 2. Récupérer la saison active
-    const { data: saison } = await supabase.from('saisons').select('id').eq('active', true).limit(1).single();
+    const { data: saison } = await supabaseClient.from('saisons').select('id').eq('active', true).limit(1).single();
 
     // 3. Créer l'inscription
     const total = (selectedGroup.prix_licence || 0) + (selectedGroup.prix_cotisation || selectedGroup.prix || 0);
     const nbCheques = selectedPaymentMode === 'cheque' ? parseInt(document.getElementById('nb-cheques').value) : null;
 
-    const { data: insc, error: inscErr } = await supabase.from('inscriptions').insert({
+    const { data: insc, error: inscErr } = await supabaseClient.from('inscriptions').insert({
       adherent_id: adh.id,
       groupe_id: selectedGroup.id,
       saison_id: saison?.id,
@@ -1080,9 +1080,9 @@ async function submitInscription() {
     // 4. Upload des documents
     for (const [type, info] of Object.entries(uploadedFiles)) {
       const path = `${currentUser.id}/${insc.id}/${type}_${info.file.name}`;
-      const { error: upErr } = await supabase.storage.from('documents').upload(path, info.file);
+      const { error: upErr } = await supabaseClient.storage.from('documents').upload(path, info.file);
       if (!upErr) {
-        await supabase.from('documents').insert({
+        await supabaseClient.from('documents').insert({
           inscription_id: insc.id,
           type,
           fichier_url: path,
@@ -1095,7 +1095,7 @@ async function submitInscription() {
     const passsportCode = document.getElementById('passsport-code')?.value.trim();
     const collegienNumero = document.getElementById('collegien-numero')?.value.trim();
     if (passsportCode || collegienNumero) {
-      await supabase.from('paiements').insert({
+      await supabaseClient.from('paiements').insert({
         inscription_id: insc.id,
         montant: total,
         mode: selectedPaymentMode,
