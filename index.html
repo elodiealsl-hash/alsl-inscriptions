@@ -476,6 +476,13 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
           <span>✍️</span><div>En signant, vous attestez avoir pris connaissance du règlement intérieur de l'ALSL et acceptez les conditions d'adhésion.</div>
         </div>
         <div class="form-group mb-4">
+          <label class="form-label">Règlement intérieur ALSL</label>
+          <a href="reglement_interieur_alsl.pdf" target="_blank" class="btn btn-outline w-full" style="justify-content:flex-start;">
+            📄 Consulter le règlement intérieur (PDF)
+          </a>
+          <span class="form-hint">Document à lire avant de signer ci-dessous.</span>
+        </div>
+        <div class="form-group mb-4">
           <label class="form-label">Votre signature <span>*</span></label>
           <canvas id="sigCanvas" class="sig-pad" width="600" height="150" style="width:100%;height:150px;"></canvas>
           <div class="flex" style="justify-content:space-between;margin-top:.5rem;">
@@ -890,15 +897,18 @@ function renderDocumentsStep() {
   if (needsCertifNouveau) {
     zonesHtml += uploadZoneHtml('certificat_medical', 'Certificat médical', 'Obligatoire', true);
   } else if (needsQuestionnaire) {
-    const pdfLink = isMinor
-      ? 'Questionnaire santé mineur (formulaire FFG)'
-      : 'Questionnaire santé majeur (formulaire FFG)';
-    zonesHtml += `<div class="text-xs text-gray mb-2">📄 ${pdfLink} — à compléter et téléverser ci-dessous.</div>`;
+    const questPdf = isMinor ? 'questionnaire_sante_mineur.pdf' : 'questionnaire_sante_majeur.pdf';
+    const questLabel = isMinor ? 'Questionnaire santé mineur (vierge)' : 'Questionnaire santé majeur (vierge)';
+    zonesHtml += `<div class="text-xs mb-2"><a href="${questPdf}" target="_blank" style="color:var(--navy);font-weight:600;">📥 Télécharger le ${questLabel}</a> — à compléter, signer puis téléverser ci-dessous.</div>`;
     zonesHtml += uploadZoneHtml('questionnaire_sante', 'Questionnaire de santé complété', 'Obligatoire', true);
     zonesHtml += uploadZoneHtml('attestation_questionnaire', 'Attestation signée', 'Obligatoire', true);
   }
   zonesHtml += uploadZoneHtml('photo', "Photo d'identité", 'Obligatoire', true);
   if (isMinor) {
+    const autorisGafGroup = ['GAF', 'Parkour', 'Baby Gym / Éveil'];
+    const isGafFamily = autorisGafGroup.includes(discipline?.nom);
+    const autorisPdf = isGafFamily ? 'autorisation_gaf_gam_parkour.pdf' : 'autorisation_fitness_aquagym_natation.pdf';
+    zonesHtml += `<div class="text-xs mb-2"><a href="${autorisPdf}" target="_blank" style="color:var(--navy);font-weight:600;">📥 Télécharger la fiche autorisation (vierge)</a> — à compléter, signer puis téléverser ci-dessous.</div>`;
     zonesHtml += uploadZoneHtml('autorisation_parentale', 'Autorisation parentale signée', 'Obligatoire (mineur)', true);
   }
   zonesDiv.innerHTML = zonesHtml;
