@@ -1,0 +1,74 @@
+<form id="form-presence">
+  <input name="nom" placeholder="Nom" required />
+  <input name="prenom" placeholder="Prénom" required />
+  <input name="email" type="email" placeholder="Email" required />
+  <input name="telephone" placeholder="Téléphone" />
+  <input name="ville" placeholder="Ville" required />
+
+  <label>
+    <input type="checkbox" name="reglement_accepte" required />
+    J'ai pris connaissance du règlement intérieur de l'ALSL et je l'accepte.
+  </label>
+
+  <fieldset>
+    <legend>Covoiturage (facultatif)</legend>
+    <label>
+      <input type="checkbox" name="covoiturage_volontaire" id="covoit-interesse" />
+      Je suis intéressé(e) par le covoiturage avec d'autres parents.
+    </label>
+    <div id="covoit-details" style="display:none">
+      <label>
+        <input type="checkbox" name="covoiturage_consentement_partage" />
+        J'accepte que mes coordonnées soient transmises aux parents volontaires de ma ville, à cette seule fin. Je peux retirer ce consentement à tout moment via contact@alsl-lambesc.fr.
+      </label>
+      <select name="moyen_contact_prefere">
+        <option value="telephone">Téléphone</option>
+        <option value="email">Email</option>
+      </select>
+    </div>
+  </fieldset>
+
+  <button type="submit">Valider</button>
+</form>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+  const supabase = createClient(
+    'VOTRE_PROJET.supabase.co',
+    'VOTRE_CLE_ANON_PUBLIC'
+  );
+
+  document.getElementById('covoit-interesse').addEventListener('change', (e) => {
+    document.getElementById('covoit-details').style.display = e.target.checked ? 'block' : 'none';
+  });
+
+  document.getElementById('form-presence').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const now = new Date().toISOString();
+
+    const { error } = await supabase.from('prospects_parents').insert({
+      nom: fd.get('nom'),
+      prenom: fd.get('prenom'),
+      email: fd.get('email'),
+      telephone: fd.get('telephone') || null,
+      ville: fd.get('ville'),
+      reunion_date: new Date().toISOString().split('T')[0],
+      reglement_accepte: fd.get('reglement_accepte') === 'on',
+      date_acceptation_reglement: now,
+      covoiturage_volontaire: fd.get('covoiturage_volontaire') === 'on',
+      covoiturage_consentement_partage: fd.get('covoiturage_consentement_partage') === 'on',
+      date_consentement_covoiturage: fd.get('covoiturage_consentement_partage') === 'on' ? now : null,
+      moyen_contact_prefere: fd.get('moyen_contact_prefere') || null,
+    });
+
+    if (error) {
+      alert("Erreur lors de l'enregistrement : " + error.message);
+    } else {
+      alert('Merci, votre présence a bien été enregistrée.');
+      e.target.reset();
+      document.getElementById('covoit-details').style.display = 'none';
+    }
+  });
+</script>
