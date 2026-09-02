@@ -51,4 +51,134 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
 .fieldset-covoit { border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
 .fieldset-covoit legend { font-weight: 700; color: var(--navy); font-size: .9rem; padding: 0 .3rem; }
 
-.btn-gold { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; width: 100%; padding: .875rem; border-radius: var(--radius); border: none;
+.btn-gold { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; width: 100%; padding: .875rem; border-radius: var(--radius); border: none; font-family: var(--font-sans); font-size: 1rem; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: var(--navy-deep); box-shadow: 0 2px 8px rgba(232,168,32,.30); transition: var(--transition); }
+.btn-gold:hover:not(:disabled) { transform: translateY(-1px); }
+.btn-gold:disabled { opacity: .5; cursor: not-allowed; }
+
+.alert-success { background: var(--green-pale); color: var(--green); border-left: 3px solid var(--green); padding: .875rem 1rem; border-radius: var(--radius); font-size: .875rem; }
+.alert-error { background: var(--red-pale); color: var(--red); border-left: 3px solid var(--red); padding: .875rem 1rem; border-radius: var(--radius); font-size: .875rem; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="logo-icon"><img src="logo-alsl.jpg" alt="Logo ALSL"></div>
+  <div>
+    <div class="logo-text">ALSL</div>
+    <div class="logo-sub">Feuille de présence & covoiturage</div>
+  </div>
+</nav>
+
+<div class="page-wrap-narrow">
+  <div class="card">
+    <div class="card-header">
+      <h3 style="color:var(--navy);">Présence à la réunion</h3>
+    </div>
+    <form id="form-presence">
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">Nom</label>
+          <input class="form-input" name="nom" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prénom</label>
+          <input class="form-input" name="prenom" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-input" type="email" name="email" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Téléphone</label>
+          <input class="form-input" name="telephone">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ville</label>
+          <input class="form-input" name="ville" required>
+        </div>
+
+        <div class="consent-box">
+          <input type="checkbox" id="reglement_accepte" name="reglement_accepte" required>
+          <label for="reglement_accepte">J'ai pris connaissance du règlement intérieur de l'ALSL et je l'accepte.</label>
+        </div>
+
+        <fieldset class="fieldset-covoit">
+          <legend>🚗 Covoiturage (facultatif)</legend>
+          <div style="display:flex;align-items:center;gap:.75rem;">
+            <input type="checkbox" id="covoit-interesse" name="covoiturage_volontaire">
+            <label for="covoit-interesse" style="font-size:.9rem;cursor:pointer;">Je suis intéressé(e) par le covoiturage avec d'autres parents.</label>
+          </div>
+          <div id="covoit-details" class="hidden" style="display:flex;flex-direction:column;gap:1rem;">
+            <div class="consent-box covoit">
+              <input type="checkbox" id="covoit-consentement" name="covoiturage_consentement_partage">
+              <label for="covoit-consentement">J'accepte que mes coordonnées soient transmises aux parents volontaires de ma ville, à cette seule fin. Je peux retirer ce consentement à tout moment via contact@alsl-lambesc.fr.</label>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Moyen de contact préféré</label>
+              <select class="form-select" name="moyen_contact_prefere">
+                <option value="telephone">Téléphone</option>
+                <option value="email">Email</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <div id="form-message"></div>
+      </div>
+      <div class="card-footer">
+        <button type="submit" class="btn-gold" id="btn-submit">Valider</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'https://qenyxlvddmnqxcdomius.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_jMu9PAZpsbplwxS6sEz-VA_vARu1XL_';
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  document.getElementById('covoit-interesse').addEventListener('change', (e) => {
+    document.getElementById('covoit-details').classList.toggle('hidden', !e.target.checked);
+  });
+
+  document.getElementById('form-presence').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const now = new Date().toISOString();
+    const btn = document.getElementById('btn-submit');
+    const msg = document.getElementById('form-message');
+    btn.disabled = true;
+    btn.textContent = 'Envoi...';
+
+    const { error } = await supabaseClient.from('prospects_parents').insert({
+      nom: fd.get('nom'),
+      prenom: fd.get('prenom'),
+      email: fd.get('email'),
+      telephone: fd.get('telephone') || null,
+      ville: fd.get('ville'),
+      reunion_date: new Date().toISOString().split('T')[0],
+      reglement_accepte: fd.get('reglement_accepte') === 'on',
+      date_acceptation_reglement: now,
+      covoiturage_volontaire: fd.get('covoiturage_volontaire') === 'on',
+      covoiturage_consentement_partage: fd.get('covoiturage_consentement_partage') === 'on',
+      date_consentement_covoiturage: fd.get('covoiturage_consentement_partage') === 'on' ? now : null,
+      moyen_contact_prefere: fd.get('moyen_contact_prefere') || null,
+    });
+
+    if (error) {
+      msg.innerHTML = `<div class="alert-error">Erreur : ${error.message}</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Valider';
+    } else {
+      msg.innerHTML = `<div class="alert-success">✓ Merci, votre présence a bien été enregistrée.</div>`;
+      e.target.reset();
+      document.getElementById('covoit-details').classList.add('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Valider';
+    }
+  });
+</script>
+</body>
+</html>
