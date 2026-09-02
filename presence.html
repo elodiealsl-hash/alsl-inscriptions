@@ -99,6 +99,12 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
           <label class="form-label">Ville</label>
           <input class="form-input" name="ville" required>
         </div>
+        <div class="form-group">
+          <label class="form-label">Groupe de l'enfant (optionnel)</label>
+          <select class="form-select" name="groupe_id" id="select-groupe">
+            <option value="">— Sélectionner —</option>
+          </select>
+        </div>
 
         <p style="font-size:.85rem;">
           <a href="reglement.html" target="_blank" style="color:var(--navy);font-weight:600;">📄 Lire le règlement intérieur complet</a>
@@ -153,6 +159,24 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
   const SUPABASE_KEY = 'sb_publishable_jMu9PAZpsbplwxS6sEz-VA_vARu1XL_';
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+  async function chargerGroupes() {
+    const { data: groupes } = await supabaseClient
+      .from('groupes')
+      .select('id, nom, jour, horaire, discipline_id, disciplines ( nom )')
+      .eq('actif', true)
+      .order('nom');
+
+    const select = document.getElementById('select-groupe');
+    (groupes || []).forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      const creneau = [g.jour, g.horaire].filter(Boolean).join(' ');
+      opt.textContent = `${g.disciplines?.nom || ''} — ${g.nom}${creneau ? ' (' + creneau + ')' : ''}`;
+      select.appendChild(opt);
+    });
+  }
+  chargerGroupes();
+
   document.getElementById('covoit-interesse').addEventListener('change', (e) => {
     document.getElementById('covoit-details').classList.toggle('hidden', !e.target.checked);
   });
@@ -172,6 +196,7 @@ h1,h2,h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.2;
       email: fd.get('email'),
       telephone: fd.get('telephone') || null,
       ville: fd.get('ville'),
+      groupe_id: fd.get('groupe_id') || null,
       reunion_date: new Date().toISOString().split('T')[0],
       reglement_accepte: fd.get('reglement_accepte') === 'on',
       date_acceptation_reglement: now,
