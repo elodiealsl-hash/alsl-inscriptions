@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ALSL — Validation des demandes RH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand">
+    <img src="logo-alsl.jpg" alt="Logo ALSL">
+    <div><div class="brand-title">ALSL — Demandes RH</div><div class="brand-sub">Espace présidente</div></div>
+  </div>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+<div class="toasts" id="toasts"></div>
+
+<!-- Connexion -->
+<div class="wrap-narrow" id="ecran-connexion">
+  <div class="card">
+    <div class="card-header"><h3>Connexion</h3></div>
+    <div class="card-body">
+      <input type="email" class="form-input" id="email" placeholder="E-mail" autocomplete="email">
+      <div style="position:relative;">
+        <input type="password" class="form-input" id="mdp" placeholder="Mot de passe (compte admin inscriptions)" autocomplete="current-password" style="padding-right:2.6rem;">
+        <button type="button" id="oeil" aria-label="Afficher le mot de passe" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;">👁</button>
+      </div>
+      <button class="btn btn-primary" id="btn-connexion">Se connecter</button>
+      <button class="btn btn-outline" id="btn-lien">Recevoir plutôt un lien par e-mail</button>
+      <a href="mot-de-passe.html" class="hint" style="text-align:center;">Mot de passe oublié ou à changer ?</a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap-narrow hidden" id="ecran-refus">
+  <div class="alert alert-error">Ce compte n'a pas accès à la validation des demandes RH.</div>
+</div>
+
+<div class="wrap hidden" id="ecran-admin">
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="attente">À traiter<span class="count" id="nb-attente">0</span></button>
+    <button class="tab" data-tab="planning">Planning</button>
+    <button class="tab" data-tab="historique">Historique</button>
+    <button class="tab" data-tab="salaries">Salariés</button>
+    <button class="tab" data-tab="periodes">Périodes sensibles</button>
+    <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="chargerTout().then(() => toast('Données actualisées.'))">↻ Actualiser</button>
+  </div>
+
+  <section id="tab-attente"><div class="card" id="liste-attente"></div></section>
+
+  <section id="tab-planning" class="hidden">
+    <div class="card">
+      <div class="card-header">
+        <h3 id="titre-mois"></h3>
+        <div style="display:flex;gap:.4rem;">
+          <button class="btn btn-sm btn-outline" onclick="changerMois(-1)">◀</button>
+          <button class="btn btn-sm btn-outline" onclick="changerMois(0)">Aujourd'hui</button>
+          <button class="btn btn-sm btn-outline" onclick="changerMois(1)">▶</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="scroll-x" id="planning"></div>
+        <div class="hint">Bleu : absence validée · Jaune : demande en attente · Fond jaune pâle : période sensible. Lettres : C congés, R récup, F formation, A absence, M arrêt.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-historique" class="hidden"><div class="card" id="liste-historique"></div></section>
+
+  <section id="tab-salaries" class="hidden">
+    <div class="card" id="liste-salaries"></div>
+    <div class="card">
+      <div class="card-header"><h3 id="titre-form-salarie">Ajouter un salarié</h3></div>
+      <form id="form-salarie">
+        <div class="card-body">
+          <input type="hidden" id="s-id">
+          <div class="grid2">
+            <div class="form-group"><label class="form-label">Prénom</label><input class="form-input" id="s-prenom" required></div>
+            <div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="s-nom" required></div>
+          </div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label">E-mail (sert à la connexion)</label><input type="email" class="form-input" id="s-email" required></div>
+            <div class="form-group"><label class="form-label">Poste</label><input class="form-input" id="s-poste" placeholder="Coach gym, responsable technique…"></div>
+          </div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label">Solde de congés (jours ouvrables)</label><input type="number" step="0.5" class="form-input" id="s-solde" value="0" required></div>
+            <div class="form-group"><label class="form-label">Solde arrêté au</label><input type="date" class="form-input" id="s-solde-date"></div>
+          </div>
+          <span class="hint">Le solde affiché au salarié = ce solde, moins les congés validés qui commencent à partir de cette date. Repartez du bulletin de paie.</span>
+          <label style="font-size:.85rem;display:flex;gap:.5rem;align-items:center;"><input type="checkbox" id="s-actif" checked> Salarié actif</label>
+          <div style="display:flex;gap:.5rem;">
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+            <button type="button" class="btn btn-outline" onclick="resetFormSalarie()">Vider</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="tab-periodes" class="hidden">
+    <div class="card" id="liste-periodes"></div>
+    <div class="card">
+      <div class="card-header"><h3>Ajouter une période sensible</h3></div>
+      <form id="form-periode">
+        <div class="card-body">
+          <div class="form-group"><label class="form-label">Libellé</label><input class="form-input" id="p-libelle" placeholder="Gala de fin d'année, compétition…" required></div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label">Du</label><input type="date" class="form-input" id="p-debut" required></div>
+            <div class="form-group"><label class="form-label">Au</label><input type="date" class="form-input" id="p-fin" required></div>
+          </div>
+          <button type="submit" class="btn btn-primary">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+
+<script src="rh-commun.js"></script>
+<script>
+let salaries = [], demandes = [], periodes = [], moisAffiche = new Date();
+const LETTRES = { conges: 'C', recuperation: 'R', formation: 'F', absence: 'A', arret: 'M' };
+const nomSal = id => { const s = salaries.find(x => x.id === id); return s ? `${s.prenom} ${s.nom}` : '?'; };
+
+// ---------- Connexion ----------
+document.getElementById('oeil').onclick = () => {
+  const i = document.getElementById('mdp'), o = document.getElementById('oeil');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  o.textContent = i.type === 'password' ? '👁' : '🙈';
+};
+document.getElementById('mdp').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-connexion').click(); });
+// Actualisation automatique toutes les 2 minutes et au retour sur l'onglet
+// (sauf si une réponse est en cours de saisie, pour ne pas l'effacer)
+function autoActualiser() {
+  const saisie = [...document.querySelectorAll('#liste-attente input')].some(i => i.value.trim());
+  if (demarre && !document.hidden && !saisie) chargerTout();
+}
+setInterval(autoActualiser, 120000);
+document.addEventListener('visibilitychange', autoActualiser);
+document.getElementById('btn-connexion').onclick = async () => {
+  const email = document.getElementById('email').value.trim(), password = document.getElementById('mdp').value;
+  if (!email || !password) return toast('Remplissez les deux champs.', 'error');
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) return toast('Identifiants incorrects.', 'error');
+  init();
+};
+document.getElementById('btn-lien').onclick = () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre e-mail.', 'error');
+  envoyerLienConnexion(email);
+};
+
+let demarre = false;
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session || demarre) return;
+  demarre = true;
+  document.getElementById('ecran-connexion').classList.add('hidden');
+  document.getElementById('nav-right').innerHTML =
+    `<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+  const { data: ok } = await sb.rpc('is_rh_valideur');
+  if (!ok) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
+  document.getElementById('ecran-admin').classList.remove('hidden');
+  await chargerTout();
+}
+
+async function chargerTout() {
+  const [s, d, p] = await Promise.all([
+    sb.from('salaries').select('*').order('prenom'),
+    sb.from('demandes_rh').select('*').order('date_debut', { ascending: false }),
+    sb.from('periodes_sensibles').select('*').order('date_debut')
+  ]);
+  const err = s.error || d.error || p.error;
+  if (err) return toast('Erreur de chargement : ' + err.message, 'error');
+  salaries = s.data; demandes = d.data; periodes = p.data;
+  rendreAttente(); rendrePlanning(); rendreHistorique(); rendreSalaries(); rendrePeriodes();
+}
+
+// ---------- Onglets ----------
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('section[id^="tab-"]').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + t.dataset.tab));
+});
+
+// ---------- À traiter ----------
+function alertesDemande(d) {
+  const sens = periodes.filter(p => chevauche(d.date_debut, d.date_fin, p.date_debut, p.date_fin));
+  const autres = demandes.filter(x => x.id !== d.id && x.salarie_id !== d.salarie_id
+    && ['validee', 'en_attente'].includes(x.statut) && chevauche(d.date_debut, d.date_fin, x.date_debut, x.date_fin));
+  let h = '';
+  if (sens.length) h += `<div class="alert alert-warning" style="margin-top:.4rem;">⚠️ Période sensible : ${sens.map(p => esc(p.libelle)).join(', ')}</div>`;
+  if (autres.length) h += `<div class="alert alert-info" style="margin-top:.4rem;">👥 Aussi absent(e)s sur ces dates : ${autres.map(x => `${esc(nomSal(x.salarie_id))} (${x.statut === 'validee' ? 'validé' : 'en attente'})`).join(', ')}</div>`;
+  return h;
+}
+function rendreAttente() {
+  const att = demandes.filter(d => d.statut === 'en_attente').sort((a, b) => a.date_debut.localeCompare(b.date_debut));
+  document.getElementById('nb-attente').textContent = att.length;
+  const el = document.getElementById('liste-attente');
+  if (!att.length) { el.innerHTML = '<div class="card-body muted">Aucune demande en attente. 👌</div>'; return; }
+  el.innerHTML = att.map(d => {
+    const s = salaries.find(x => x.id === d.salarie_id);
+    const solde = s && d.type === 'conges' ? soldeRestant(s, demandes) : null;
+    return `<div class="list-item">
+      <div style="flex:1;">
+        <div><strong>${esc(nomSal(d.salarie_id))}</strong> · ${esc(TYPES_RH[d.type])} · ${fmtPeriode(d.date_debut, d.date_fin)} · <strong>${Number(d.nb_jours).toLocaleString('fr-FR')} j</strong></div>
+        ${solde !== null ? `<div class="muted">Solde actuel : ${solde.toLocaleString('fr-FR')} j → ${(solde - d.nb_jours).toLocaleString('fr-FR')} j après validation${solde - d.nb_jours < 0 ? ' <span class="badge badge-red">solde négatif</span>' : ''}</div>` : ''}
+        ${d.commentaire ? `<div class="muted">« ${esc(d.commentaire)} »</div>` : ''}
+        <div class="muted">Envoyée le ${fmtDate(d.created_at.slice(0, 10))}</div>
+        ${alertesDemande(d)}
+        <input class="form-input" id="rep-${d.id}" placeholder="Réponse au salarié (facultatif)" style="margin-top:.5rem;" maxlength="300">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;">
+        <button class="btn btn-sm btn-green" onclick="traiter('${d.id}','validee')">Valider</button>
+        <button class="btn btn-sm btn-red" onclick="traiter('${d.id}','refusee')">Refuser</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function traiter(id, statut) {
+  const { data: { user } } = await sb.auth.getUser();
+  const reponse = document.getElementById('rep-' + id)?.value.trim() || null;
+  if (statut === 'refusee' && !reponse && !confirm('Refuser sans donner de motif ?')) return;
+  const { error } = await sb.from('demandes_rh').update({
+    statut, reponse, traite_par: user.id, traite_le: new Date().toISOString()
+  }).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast(statut === 'validee' ? 'Demande validée.' : 'Demande refusée.');
+  chargerTout();
+}
+
+// ---------- Planning ----------
+function changerMois(n) {
+  if (n === 0) moisAffiche = new Date();
+  else moisAffiche = new Date(moisAffiche.getFullYear(), moisAffiche.getMonth() + n, 1);
+  rendrePlanning();
+}
+function rendrePlanning() {
+  const y = moisAffiche.getFullYear(), m = moisAffiche.getMonth();
+  const nbJ = new Date(y, m + 1, 0).getDate();
+  document.getElementById('titre-mois').textContent =
+    new Date(y, m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }).replace(/^./, c => c.toUpperCase());
+  const jours = Array.from({ length: nbJ }, (_, i) => {
+    const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
+    return { iso, num: i + 1, dim: new Date(iso + 'T12:00:00').getDay() === 0,
+             sens: periodes.some(p => iso >= p.date_debut && iso <= p.date_fin) };
+  });
+  const actifs = salaries.filter(s => s.actif);
+  let h = '<table class="planning"><tr><th class="nom">Salarié</th>' +
+    jours.map(j => `<th class="${j.sens ? 'sens' : ''}">${j.num}</th>`).join('') + '</tr>';
+  actifs.forEach(s => {
+    h += `<tr><td class="nom">${esc(s.prenom)} ${esc(s.nom.charAt(0))}.</td>`;
+    jours.forEach(j => {
+      const d = demandes.find(x => x.salarie_id === s.id && ['validee', 'en_attente'].includes(x.statut) && j.iso >= x.date_debut && j.iso <= x.date_fin);
+      const cls = d ? 'abs' + (d.statut === 'en_attente' ? ' attente' : '') : (j.sens ? 'sens' : (j.dim ? 'we' : ''));
+      h += `<td class="${cls}" title="${d ? esc(TYPES_RH[d.type]) : ''}">${d ? LETTRES[d.type] : ''}</td>`;
+    });
+    h += '</tr>';
+  });
+  if (!actifs.length) h += `<tr><td class="nom" colspan="${nbJ + 1}">Ajoutez d'abord les salariés (onglet Salariés).</td></tr>`;
+  document.getElementById('planning').innerHTML = h + '</table>';
+}
+
+// ---------- Historique ----------
+function rendreHistorique() {
+  const traitees = demandes.filter(d => d.statut !== 'en_attente');
+  const el = document.getElementById('liste-historique');
+  if (!traitees.length) { el.innerHTML = '<div class="card-body muted">Aucune demande traitée pour l\'instant.</div>'; return; }
+  el.innerHTML = traitees.map(d => `<div class="list-item">
+    <div>
+      <div><strong>${esc(nomSal(d.salarie_id))}</strong> · ${esc(TYPES_RH[d.type])} · ${fmtPeriode(d.date_debut, d.date_fin)} · ${Number(d.nb_jours).toLocaleString('fr-FR')} j</div>
+      ${d.reponse ? `<div class="muted">Réponse : ${esc(d.reponse)}</div>` : ''}
+      ${d.traite_le ? `<div class="muted">Traitée le ${fmtDate(d.traite_le.slice(0, 10))}</div>` : ''}
+    </div>
+    <div>${STATUTS_RH[d.statut]}</div>
+  </div>`).join('');
+}
+
+// ---------- Salariés ----------
+function rendreSalaries() {
+  const el = document.getElementById('liste-salaries');
+  if (!salaries.length) { el.innerHTML = '<div class="card-body muted">Aucun salarié enregistré.</div>'; return; }
+  el.innerHTML = salaries.map(s => `<div class="list-item">
+    <div>
+      <div><strong>${esc(s.prenom)} ${esc(s.nom)}</strong> ${s.actif ? '' : '<span class="badge badge-gray">inactif</span>'}</div>
+      <div class="muted">${esc(s.poste || '')} · ${esc(s.email)}</div>
+    </div>
+    <div style="display:flex;gap:.6rem;align-items:center;">
+      <span class="badge badge-navy">${soldeRestant(s, demandes).toLocaleString('fr-FR')} j restants</span>
+      <button class="btn btn-sm btn-outline" onclick="editerSalarie('${s.id}')">Modifier</button>
+    </div>
+  </div>`).join('');
+}
+function editerSalarie(id) {
+  const s = salaries.find(x => x.id === id);
+  document.getElementById('titre-form-salarie').textContent = `Modifier ${s.prenom} ${s.nom}`;
+  document.getElementById('s-id').value = s.id;
+  document.getElementById('s-prenom').value = s.prenom;
+  document.getElementById('s-nom').value = s.nom;
+  document.getElementById('s-email').value = s.email;
+  document.getElementById('s-poste').value = s.poste || '';
+  document.getElementById('s-solde').value = s.solde_conges_jours;
+  document.getElementById('s-solde-date').value = s.solde_maj_le || '';
+  document.getElementById('s-actif').checked = s.actif;
+  document.getElementById('form-salarie').scrollIntoView({ behavior: 'smooth' });
+}
+function resetFormSalarie() {
+  document.getElementById('form-salarie').reset();
+  document.getElementById('s-id').value = '';
+  document.getElementById('titre-form-salarie').textContent = 'Ajouter un salarié';
+}
+document.getElementById('form-salarie').addEventListener('submit', async e => {
+  e.preventDefault();
+  const id = document.getElementById('s-id').value;
+  const row = {
+    prenom: document.getElementById('s-prenom').value.trim(),
+    nom: document.getElementById('s-nom').value.trim(),
+    email: document.getElementById('s-email').value.trim().toLowerCase(),
+    poste: document.getElementById('s-poste').value.trim() || null,
+    solde_conges_jours: Number(document.getElementById('s-solde').value),
+    solde_maj_le: document.getElementById('s-solde-date').value || null,
+    actif: document.getElementById('s-actif').checked
+  };
+  const { error } = id ? await sb.from('salaries').update(row).eq('id', id) : await sb.from('salaries').insert(row);
+  if (error && error.code === '23505') return toast('Cette adresse e-mail est déjà enregistrée pour un salarié.', 'error');
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Salarié enregistré.');
+  resetFormSalarie();
+  chargerTout();
+});
+
+// ---------- Périodes sensibles ----------
+function rendrePeriodes() {
+  const el = document.getElementById('liste-periodes');
+  if (!periodes.length) { el.innerHTML = '<div class="card-body muted">Aucune période sensible.</div>'; return; }
+  el.innerHTML = periodes.map(p => `<div class="list-item">
+    <div><strong>${esc(p.libelle)}</strong> · ${fmtPeriode(p.date_debut, p.date_fin)}</div>
+    <button class="btn btn-sm btn-outline" onclick="supprimerPeriode('${p.id}')">Supprimer</button>
+  </div>`).join('');
+}
+document.getElementById('form-periode').addEventListener('submit', async e => {
+  e.preventDefault();
+  const debut = document.getElementById('p-debut').value, fin = document.getElementById('p-fin').value;
+  if (fin < debut) return toast('La date de fin est avant la date de début.', 'error');
+  const { error } = await sb.from('periodes_sensibles').insert({ libelle: document.getElementById('p-libelle').value.trim(), date_debut: debut, date_fin: fin });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  e.target.reset();
+  toast('Période ajoutée.');
+  chargerTout();
+});
+async function supprimerPeriode(id) {
+  if (!confirm('Supprimer cette période ?')) return;
+  const { error } = await sb.from('periodes_sensibles').delete().eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  chargerTout();
+}
+
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') setTimeout(init, 0); });
+init();
+</script>
+</body>
+</html>

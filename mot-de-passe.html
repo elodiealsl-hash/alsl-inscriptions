@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ALSL — Mot de passe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand">
+    <img src="logo-alsl.jpg" alt="Logo ALSL">
+    <div><div class="brand-title">ALSL — Mot de passe</div><div class="brand-sub">Portail du club</div></div>
+  </div>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+<div class="toasts" id="toasts"></div>
+
+<!-- Pas connecté : demander un lien -->
+<div class="wrap-narrow hidden" id="ecran-oubli">
+  <div class="card">
+    <div class="card-header"><h3>Mot de passe oublié</h3></div>
+    <div class="card-body">
+      <div class="alert alert-info">Saisissez votre adresse e-mail. Vous recevrez un lien pour choisir un nouveau mot de passe. Ouvrez-le sur le même appareil.</div>
+      <input type="email" class="form-input" id="email" placeholder="votre@email.fr" autocomplete="email">
+      <button class="btn btn-primary" id="btn-envoyer">Recevoir le lien</button>
+    </div>
+  </div>
+</div>
+
+<!-- Connecté : choisir un nouveau mot de passe -->
+<div class="wrap-narrow hidden" id="ecran-nouveau">
+  <div class="card">
+    <div class="card-header"><h3>Choisir un nouveau mot de passe</h3></div>
+    <form id="form-mdp">
+      <div class="card-body">
+        <div class="muted" id="compte"></div>
+        <div class="form-group">
+          <label class="form-label" for="mdp1">Nouveau mot de passe</label>
+          <div style="position:relative;">
+            <input type="password" class="form-input" id="mdp1" minlength="10" required autocomplete="new-password" style="padding-right:2.6rem;">
+            <button type="button" class="oeil" data-cible="mdp1" aria-label="Afficher" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;">👁</button>
+          </div>
+          <span class="hint">10 caractères minimum.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="mdp2">Confirmer</label>
+          <div style="position:relative;">
+            <input type="password" class="form-input" id="mdp2" minlength="10" required autocomplete="new-password" style="padding-right:2.6rem;">
+            <button type="button" class="oeil" data-cible="mdp2" aria-label="Afficher" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;">👁</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-gold" id="btn-valider">Enregistrer le mot de passe</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="wrap-narrow hidden" id="ecran-ok">
+  <div class="alert alert-success">Mot de passe enregistré. Vous pouvez fermer cette page ou revenir au portail.</div>
+  <p style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+    <a class="btn btn-outline" href="admin.html">Administration</a>
+    <a class="btn btn-outline" href="rh-admin.html">Demandes RH</a>
+    <a class="btn btn-outline" href="mon-dossier.html">Mon dossier</a>
+  </p>
+</div>
+
+<script src="rh-commun.js"></script>
+<script>
+const montrer = id => ['ecran-oubli', 'ecran-nouveau', 'ecran-ok'].forEach(e =>
+  document.getElementById(e).classList.toggle('hidden', e !== id));
+
+document.querySelectorAll('.oeil').forEach(b => b.onclick = () => {
+  const i = document.getElementById(b.dataset.cible);
+  i.type = i.type === 'password' ? 'text' : 'password';
+  b.textContent = i.type === 'password' ? '👁' : '🙈';
+});
+
+document.getElementById('btn-envoyer').onclick = async () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre adresse e-mail.', 'error');
+  const btn = document.getElementById('btn-envoyer');
+  btn.disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Lien envoyé : vérifiez votre boîte mail (et les spams).');
+};
+
+document.getElementById('form-mdp').addEventListener('submit', async e => {
+  e.preventDefault();
+  const p1 = document.getElementById('mdp1').value, p2 = document.getElementById('mdp2').value;
+  if (p1 !== p2) return toast('Les deux mots de passe ne sont pas identiques.', 'error');
+  const btn = document.getElementById('btn-valider');
+  btn.disabled = true;
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  montrer('ecran-ok');
+});
+
+async function afficher() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return montrer('ecran-oubli');
+  document.getElementById('compte').textContent = 'Compte : ' + session.user.email;
+  document.getElementById('nav-right').innerHTML =
+    `<button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+  montrer('ecran-nouveau');
+}
+sb.auth.onAuthStateChange(ev => {
+  if (ev === 'PASSWORD_RECOVERY' || ev === 'SIGNED_IN') setTimeout(afficher, 0);
+});
+afficher();
+</script>
+</body>
+</html>
