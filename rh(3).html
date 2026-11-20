@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ALSL — Mes demandes RH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand">
+    <img src="logo-alsl.jpg" alt="Logo ALSL">
+    <div><div class="brand-title">ALSL — Espace salarié</div><div class="brand-sub">Congés, récupérations, formations</div></div>
+  </div>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+<div class="toasts" id="toasts"></div>
+
+<!-- Connexion -->
+<div class="wrap-narrow" id="ecran-connexion">
+  <div class="card">
+    <div class="card-header"><h3>Connexion</h3></div>
+    <div class="card-body">
+      <div class="alert alert-info">Saisissez votre adresse e-mail. Vous recevrez un lien de connexion, sans mot de passe à retenir.</div>
+      <input type="email" class="form-input" id="email" placeholder="prenom.nom@exemple.fr" autocomplete="email">
+      <button class="btn btn-primary" id="btn-lien">Recevoir mon lien de connexion</button>
+    </div>
+  </div>
+</div>
+
+<!-- Adresse non reconnue -->
+<div class="wrap-narrow hidden" id="ecran-inconnu">
+  <div class="alert alert-warning">Cette adresse e-mail n'est pas enregistrée comme salarié de l'ALSL. Contactez la présidente pour qu'elle vous ajoute.</div>
+</div>
+
+<!-- Espace salarié -->
+<div class="wrap hidden" id="ecran-salarie">
+  <h2 id="bonjour" style="margin-bottom:1.25rem;"></h2>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="stat"><span class="stat-num" id="solde">—</span><span>jours de congés restants</span></div>
+      <div class="hint" id="solde-info"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Nouvelle demande</h3></div>
+    <form id="form-demande">
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="type">Type</label>
+          <select class="form-select" id="type" required></select>
+        </div>
+        <div class="hidden" id="info-arret" style="display:flex;flex-direction:column;gap:.6rem;">
+          <div class="alert alert-info"><strong>Volet 3 (employeur)</strong> : joignez-le ci-dessous. Les <strong>volets 1 et 2</strong> sont à envoyer à votre CPAM sous 48 h, sauf si votre médecin a fait l'envoi en ligne. N'indiquez jamais le motif médical.</div>
+          <div class="form-group">
+            <label class="form-label" for="volet3">Photo ou PDF du volet 3</label>
+            <input type="file" class="form-input" id="volet3" accept="image/*,application/pdf">
+            <span class="hint">Vous pourrez aussi l'ajouter plus tard depuis « Mes demandes ». 10 Mo maximum.</span>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="form-group">
+            <label class="form-label" for="date_debut">Du</label>
+            <input type="date" class="form-input" id="date_debut" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="date_fin">Au (inclus)</label>
+            <input type="date" class="form-input" id="date_fin" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="nb_jours">Nombre de jours</label>
+          <input type="number" class="form-input" id="nb_jours" min="0.5" step="0.5" required>
+          <span class="hint">Calculé en jours ouvrables (du lundi au samedi, hors jours fériés). Modifiable, par exemple pour une demi-journée.</span>
+        </div>
+        <div id="alerte-sensible"></div>
+        <div class="form-group">
+          <label class="form-label" for="commentaire">Commentaire (facultatif)</label>
+          <textarea class="form-input" id="commentaire" rows="2" maxlength="500" placeholder="Remplacement prévu, intitulé de la formation…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-gold" id="btn-envoyer">Envoyer la demande</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Mes demandes</h3></div>
+    <div id="mes-demandes"><div class="card-body muted">Chargement…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3 id="titre-equipe">Planning de l'équipe</h3>
+      <div style="display:flex;gap:.4rem;">
+        <button class="btn btn-sm btn-outline" onclick="changerMoisEquipe(-1)">◀</button>
+        <button class="btn btn-sm btn-outline" onclick="changerMoisEquipe(0)">Ce mois-ci</button>
+        <button class="btn btn-sm btn-outline" onclick="changerMoisEquipe(1)">▶</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="scroll-x" id="planning-equipe"></div>
+      <div class="hint">Absences validées uniquement (case bleue). Fond jaune pâle : gala ou compétition. Le motif des absences n'est pas affiché.</div>
+    </div>
+  </div>
+</div>
+
+<script src="rh-commun.js"></script>
+<script>
+let salarie = null, demandes = [], periodes = [];
+
+const selType = document.getElementById('type');
+Object.entries(TYPES_RH).forEach(([v, l]) => selType.add(new Option(l, v)));
+
+document.getElementById('btn-lien').onclick = async () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre adresse e-mail.', 'error');
+  const btn = document.getElementById('btn-lien');
+  btn.disabled = true;
+  if (!(await envoyerLienConnexion(email))) btn.disabled = false;
+};
+
+let demarre = false;
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session || demarre) return;
+  demarre = true;
+  document.getElementById('ecran-connexion').classList.add('hidden');
+  document.getElementById('nav-right').innerHTML =
+    `<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+
+  const { data: fiches } = await sb.from('salaries').select('*').eq('actif', true)
+    .ilike('email', session.user.email);
+  salarie = (fiches || [])[0];
+  if (!salarie) { document.getElementById('ecran-inconnu').classList.remove('hidden'); return; }
+
+  document.getElementById('ecran-salarie').classList.remove('hidden');
+  document.getElementById('bonjour').textContent = `Bonjour ${salarie.prenom}`;
+  const { data: p } = await sb.from('periodes_sensibles').select('*').order('date_debut');
+  periodes = p || [];
+  // Contrat intermittent : congés payés réglés chaque mois, pas de type « Congés payés »
+  if (salarie.type_contrat === 'intermittent') {
+    [...selType.options].filter(o => o.value === 'conges').forEach(o => o.remove());
+  }
+  await charger();
+  rendreEquipe();
+}
+
+// ---------- Planning de l'équipe (absences validées, sans motif) ----------
+let moisEquipe = new Date();
+function changerMoisEquipe(n) {
+  moisEquipe = n === 0 ? new Date() : new Date(moisEquipe.getFullYear(), moisEquipe.getMonth() + n, 1);
+  rendreEquipe();
+}
+async function rendreEquipe() {
+  const y = moisEquipe.getFullYear(), m = moisEquipe.getMonth(), nbJ = new Date(y, m + 1, 0).getDate();
+  const iso = j => `${y}-${String(m + 1).padStart(2, '0')}-${String(j).padStart(2, '0')}`;
+  document.getElementById('titre-equipe').textContent = "Planning de l'équipe — " +
+    new Date(y, m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const { data, error } = await sb.rpc('planning_equipe', { p_debut: iso(1), p_fin: iso(nbJ) });
+  const el = document.getElementById('planning-equipe');
+  if (error) { el.innerHTML = `<div class="muted">Planning indisponible : ${esc(error.message)}</div>`; return; }
+  const noms = [...new Set((data || []).map(r => r.salarie))];
+  if (!noms.length) { el.innerHTML = '<div class="muted">Aucune absence validée ce mois-ci.</div>'; return; }
+  const jours = Array.from({ length: nbJ }, (_, i) => ({
+    d: iso(i + 1), n: i + 1,
+    dim: new Date(iso(i + 1) + 'T12:00:00').getDay() === 0,
+    sens: periodes.some(p => iso(i + 1) >= p.date_debut && iso(i + 1) <= p.date_fin)
+  }));
+  let h = '<table class="planning"><tr><th class="nom"></th>' +
+    jours.map(j => `<th class="${j.sens ? 'sens' : ''}">${j.n}</th>`).join('') + '</tr>';
+  noms.forEach(nom => {
+    h += `<tr><td class="nom">${esc(nom)}</td>`;
+    jours.forEach(j => {
+      const abs = data.some(r => r.salarie === nom && j.d >= r.date_debut && j.d <= r.date_fin);
+      h += `<td class="${abs ? 'abs' : (j.sens ? 'sens' : (j.dim ? 'we' : ''))}">${abs ? '•' : ''}</td>`;
+    });
+    h += '</tr>';
+  });
+  el.innerHTML = h + '</table>';
+}
+
+async function charger() {
+  const { data, error } = await sb.from('demandes_rh').select('*')
+    .eq('salarie_id', salarie.id).order('date_debut', { ascending: false });
+  if (error) return toast('Erreur de chargement : ' + error.message, 'error');
+  demandes = data || [];
+
+  document.getElementById('solde').textContent = soldeRestant(salarie, demandes).toLocaleString('fr-FR');
+  if (salarie.type_contrat === 'intermittent') {
+    document.getElementById('solde').textContent = '0';
+    document.getElementById('solde-info').textContent = "Contrat intermittent : vos congés payés sont réglés chaque mois sur votre bulletin. Pour une absence sur une période travaillée, choisissez « Absence exceptionnelle » (rattrapée si possible, sinon non payée).";
+  } else document.getElementById('solde-info').textContent = salarie.solde_maj_le
+    ? `Solde arrêté au ${fmtDate(salarie.solde_maj_le)}, moins les congés validés depuis. Les demandes en attente ne sont pas encore déduites.`
+    : 'Solde pas encore renseigné par la présidente.';
+
+  const el = document.getElementById('mes-demandes');
+  if (!demandes.length) { el.innerHTML = '<div class="card-body muted">Aucune demande pour l\'instant.</div>'; return; }
+  el.innerHTML = demandes.map(d => `
+    <div class="list-item">
+      <div>
+        <div><strong>${esc(TYPES_RH[d.type])}</strong> · ${fmtPeriode(d.date_debut, d.date_fin)} · ${Number(d.nb_jours).toLocaleString('fr-FR')} j</div>
+        ${d.commentaire ? `<div class="muted">${esc(d.commentaire)}</div>` : ''}
+        ${d.reponse ? `<div class="muted">Réponse : ${esc(d.reponse)}</div>` : ''}
+        <div class="muted">Envoyée le ${fmtDate(d.created_at.slice(0, 10))}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;align-items:flex-end;">
+        ${STATUTS_RH[d.statut]}
+        ${d.statut === 'en_attente' ? `<button class="btn btn-sm btn-outline" onclick="annuler('${d.id}')">Annuler</button>` : ''}
+        ${d.type === 'arret' && d.justificatif_path ? '<span class="badge badge-navy">📎 Volet 3 joint</span>' : ''}
+        ${d.type === 'arret' && !d.justificatif_path && d.statut !== 'annulee' ? `<label class="btn btn-sm btn-gold" style="cursor:pointer;">📎 Ajouter le volet 3<input type="file" accept="image/*,application/pdf" style="display:none" onchange="ajouterVolet3('${d.id}', this)"></label>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function majCalcul() {
+  const d1 = document.getElementById('date_debut').value, d2 = document.getElementById('date_fin').value;
+  if (d1 && (!d2 || d2 < d1)) document.getElementById('date_fin').value = d1;
+  const fin = document.getElementById('date_fin').value;
+  if (d1 && fin) document.getElementById('nb_jours').value = joursOuvrables(d1, fin) || 0.5;
+  const conflits = periodes.filter(p => d1 && fin && chevauche(d1, fin, p.date_debut, p.date_fin));
+  document.getElementById('alerte-sensible').innerHTML = conflits.length
+    ? `<div class="alert alert-warning">⚠️ Période sensible : ${conflits.map(p => `${esc(p.libelle)} (${fmtPeriode(p.date_debut, p.date_fin)})`).join(', ')}. La demande pourra être refusée.</div>`
+    : '';
+}
+['date_debut', 'date_fin'].forEach(id => document.getElementById(id).addEventListener('change', majCalcul));
+selType.addEventListener('change', () =>
+  document.getElementById('info-arret').classList.toggle('hidden', selType.value !== 'arret'));
+
+document.getElementById('form-demande').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('btn-envoyer');
+  btn.disabled = true;
+  let justificatif_path = null;
+  const fichier = document.getElementById('volet3').files[0];
+  if (selType.value === 'arret' && fichier) {
+    justificatif_path = await envoyerVolet3(fichier);
+    if (!justificatif_path) { btn.disabled = false; return; }
+  }
+  const { error } = await sb.from('demandes_rh').insert({
+    salarie_id: salarie.id,
+    type: selType.value,
+    date_debut: document.getElementById('date_debut').value,
+    date_fin: document.getElementById('date_fin').value,
+    nb_jours: Number(document.getElementById('nb_jours').value),
+    commentaire: document.getElementById('commentaire').value.trim() || null,
+    justificatif_path
+  });
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Demande envoyée à la présidente.');
+  e.target.reset();
+  document.getElementById('alerte-sensible').innerHTML = '';
+  document.getElementById('info-arret').classList.add('hidden');
+  charger();
+});
+
+// Dépôt du volet 3 dans le dossier privé du salarié (lisible seulement par la présidente,
+// et par la trésorière une fois l'arrêt pris en compte)
+async function envoyerVolet3(fichier) {
+  if (fichier.size > 10 * 1024 * 1024) { toast('Fichier trop lourd (10 Mo maximum).', 'error'); return null; }
+  const ext = (fichier.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const chemin = `${salarie.id}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb.storage.from('justificatifs-rh').upload(chemin, fichier, { contentType: fichier.type || undefined, upsert: false });
+  if (error) { toast('Envoi du justificatif impossible : ' + error.message, 'error'); return null; }
+  return chemin;
+}
+async function ajouterVolet3(id, input) {
+  const fichier = input.files[0];
+  if (!fichier) return;
+  const chemin = await envoyerVolet3(fichier);
+  if (!chemin) return;
+  const { error } = await sb.rpc('ajouter_justificatif_rh', { p_id: id, p_path: chemin });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Volet 3 envoyé à la présidente.');
+  charger();
+}
+
+async function annuler(id) {
+  if (!confirm('Annuler cette demande ?')) return;
+  const { error } = await sb.rpc('annuler_demande_rh', { p_id: id });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Demande annulée.');
+  charger();
+}
+
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') setTimeout(init, 0); });
+init();
+</script>
+</body>
+</html>

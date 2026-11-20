@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ALSL — Espace trésorerie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand">
+    <img src="logo-alsl.jpg" alt="Logo ALSL">
+    <div><div class="brand-title">ALSL — Trésorerie</div><div class="brand-sub">Arrêts de travail à transmettre à la paie</div></div>
+  </div>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+<div class="toasts" id="toasts"></div>
+
+<div class="wrap-narrow" id="ecran-connexion">
+  <div class="card">
+    <div class="card-header"><h3>Connexion</h3></div>
+    <div class="card-body">
+      <input type="email" class="form-input" id="email" placeholder="E-mail" autocomplete="email">
+      <div style="position:relative;">
+        <input type="password" class="form-input" id="mdp" placeholder="Mot de passe" autocomplete="current-password" style="padding-right:2.6rem;">
+        <button type="button" id="oeil" aria-label="Afficher le mot de passe" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;">👁</button>
+      </div>
+      <button class="btn btn-primary" id="btn-connexion">Se connecter</button>
+      <button class="btn btn-outline" id="btn-lien">Recevoir plutôt un lien par e-mail</button>
+      <a href="mot-de-passe.html" class="hint" style="text-align:center;">Mot de passe oublié ou à changer ?</a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap-narrow hidden" id="ecran-refus">
+  <div class="alert alert-error">Ce compte n'a pas accès à l'espace trésorerie.</div>
+</div>
+
+<div class="wrap hidden" id="ecran-tresorerie">
+  <div class="alert alert-info" style="margin-bottom:1.25rem;">Données confidentielles : ces informations servent uniquement à la paie. Ne les transférez qu'au cabinet de paie ou à la comptable, et ne les conservez pas sur un support personnel.</div>
+  <div class="card">
+    <div class="card-header">
+      <h3 id="titre-mois"></h3>
+      <div style="display:flex;gap:.4rem;">
+        <button class="btn btn-sm btn-outline" onclick="changerMois(-1)">◀</button>
+        <button class="btn btn-sm btn-outline" onclick="changerMois(0)">Ce mois-ci</button>
+        <button class="btn btn-sm btn-outline" onclick="changerMois(1)">▶</button>
+      </div>
+    </div>
+    <div id="liste-arrets"><div class="card-body muted">Chargement…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3>Texte pour le cabinet de paie</h3></div>
+    <div class="card-body">
+      <textarea class="form-input" id="texte" rows="8" readonly style="font-family:ui-monospace,Consolas,monospace;font-size:.82rem;"></textarea>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="toutTelecharger()">⬇️ Télécharger tous les volets 3 du mois</button>
+        <button class="btn btn-gold" onclick="preparerMail()">✉️ Préparer le mail à la comptable</button>
+        <button class="btn btn-outline" onclick="copier()">📋 Copier le texte</button>
+      </div>
+      <span class="hint">1. Téléchargez les volets 3 · 2. Préparez le mail (il s'ouvre dans votre messagerie, texte déjà rédigé) · 3. Joignez les fichiers téléchargés et envoyez.</span>
+    </div>
+  </div>
+</div>
+
+<script src="rh-commun.js"></script>
+<script>
+let mois = new Date(), arrets = [];
+
+document.getElementById('oeil').onclick = () => {
+  const i = document.getElementById('mdp'), o = document.getElementById('oeil');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  o.textContent = i.type === 'password' ? '👁' : '🙈';
+};
+document.getElementById('mdp').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-connexion').click(); });
+document.getElementById('btn-connexion').onclick = async () => {
+  const email = document.getElementById('email').value.trim(), password = document.getElementById('mdp').value;
+  if (!email || !password) return toast('Remplissez les deux champs.', 'error');
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) return toast('Identifiants incorrects.', 'error');
+  init();
+};
+document.getElementById('btn-lien').onclick = () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre e-mail.', 'error');
+  envoyerLienConnexion(email);
+};
+
+let demarre = false;
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session || demarre) return;
+  demarre = true;
+  document.getElementById('ecran-connexion').classList.add('hidden');
+  document.getElementById('nav-right').innerHTML =
+    `<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+  // Accès : trésorière, ou présidente en relais
+  const [t, v] = await Promise.all([sb.rpc('is_rh_tresorier'), sb.rpc('is_rh_valideur')]);
+  if (!t.data && !v.data) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
+  document.getElementById('ecran-tresorerie').classList.remove('hidden');
+  charger();
+}
+
+function changerMois(n) {
+  mois = n === 0 ? new Date() : new Date(mois.getFullYear(), mois.getMonth() + n, 1);
+  charger();
+}
+async function charger() {
+  const y = mois.getFullYear(), m = mois.getMonth();
+  const debut = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const fin = `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`;
+  const libMois = new Date(y, m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  document.getElementById('titre-mois').textContent = 'Arrêts de travail — ' + libMois;
+  const { data, error } = await sb.rpc('arrets_valides', { p_debut: debut, p_fin: fin });
+  const el = document.getElementById('liste-arrets');
+  if (error) { el.innerHTML = `<div class="card-body alert alert-error">Erreur : ${esc(error.message)}</div>`; return; }
+  arrets = data || [];
+  el.innerHTML = arrets.length ? arrets.map(a => `<div class="list-item">
+      <div>
+        <div><strong>${esc(a.salarie)}</strong> · ${fmtPeriode(a.date_debut, a.date_fin)} · ${Number(a.nb_jours).toLocaleString('fr-FR')} j ouvrable(s)</div>
+        <div class="muted">Pris en compte le ${a.traite_le ? fmtDate(a.traite_le.slice(0, 10)) : '—'}</div>
+      </div>
+      <div>${a.justificatif_path
+        ? `<button class="btn btn-sm btn-outline" onclick="ouvrir('${a.demande_id}')">📎 Volet 3</button>`
+        : '<span class="badge badge-gold">Volet 3 non joint</span>'}</div>
+    </div>`).join('')
+    : '<div class="card-body muted">Aucun arrêt de travail pris en compte sur ce mois.</div>';
+
+  const lignes = [`Arrêts de travail ALSL — ${libMois}`, ''];
+  if (!arrets.length) lignes.push('Aucun arrêt de travail ce mois-ci.');
+  arrets.forEach(a => lignes.push(`- ${a.salarie} : arrêt ${fmtPeriode(a.date_debut, a.date_fin)}${a.justificatif_path ? ' (volet 3 joint)' : ' (volet 3 à venir)'}`));
+  document.getElementById('texte').value = lignes.join('\n');
+}
+async function ouvrir(id) {
+  const a = arrets.find(x => x.demande_id === id);
+  if (!a) return;
+  const fen = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('justificatifs-rh').createSignedUrl(a.justificatif_path, 120, { download: true });
+  if (error) { if (fen) fen.close(); return toast('Ouverture impossible : ' + error.message, 'error'); }
+  if (fen) fen.location = data.signedUrl; else window.location = data.signedUrl;
+}
+// Adresse de la comptable, à renseigner une fois connue (vide = à saisir dans la messagerie)
+const EMAIL_COMPTABLE = '';
+function preparerMail() {
+  const sujet = 'ALSL — ' + document.getElementById('titre-mois').textContent;
+  const corps = 'Bonjour,\n\nVeuillez trouver ci-dessous les arrêts de travail du mois, avec les volets 3 en pièces jointes.\n\n'
+    + document.getElementById('texte').value + '\n\nBien cordialement,\nLa trésorière de l\'ALSL';
+  window.location.href = 'mailto:' + EMAIL_COMPTABLE + '?subject=' + encodeURIComponent(sujet) + '&body=' + encodeURIComponent(corps);
+}
+async function toutTelecharger() {
+  const avecFichier = arrets.filter(a => a.justificatif_path);
+  if (!avecFichier.length) return toast('Aucun volet 3 à télécharger ce mois-ci.', 'error');
+  for (const a of avecFichier) {
+    const ext = a.justificatif_path.split('.').pop();
+    const nom = `Arret_${a.salarie.replace(/[^A-Za-zÀ-ÿ]+/g, '_')}_${a.date_debut}.${ext}`;
+    const { data, error } = await sb.storage.from('justificatifs-rh').createSignedUrl(a.justificatif_path, 120, { download: nom });
+    if (error) { toast('Erreur pour ' + a.salarie + ' : ' + error.message, 'error'); continue; }
+    const lien = document.createElement('a');
+    lien.href = data.signedUrl; lien.download = nom;
+    document.body.appendChild(lien); lien.click(); lien.remove();
+    await new Promise(r => setTimeout(r, 600));
+  }
+  toast(avecFichier.length + ' fichier(s) téléchargé(s).');
+}
+async function copier() {
+  const t = document.getElementById('texte');
+  try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); }
+  toast('Texte copié.');
+}
+
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') setTimeout(init, 0); });
+init();
+</script>
+</body>
+</html>
