@@ -54,7 +54,40 @@
     <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="chargerTout().then(() => toast('Données actualisées.'))">↻ Actualiser</button>
   </div>
 
-  <section id="tab-attente"><div class="card" id="liste-attente"></div></section>
+  <section id="tab-attente">
+    <div class="card">
+      <div class="card-header"><h3>Saisir pour une salariée</h3><button class="btn btn-sm btn-outline" id="btn-ouvrir-saisie" onclick="basculerSaisie()">+ Nouvelle saisie</button></div>
+      <form id="form-saisie" class="hidden">
+        <div class="card-body">
+          <span class="hint">Pour un arrêt annoncé par téléphone, une salariée sans smartphone ou une régularisation. La demande portera la mention « Saisie par la présidence ».</span>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label" for="sa-salarie">Salariée</label><select class="form-select" id="sa-salarie" required></select></div>
+            <div class="form-group"><label class="form-label" for="sa-type">Type</label><select class="form-select" id="sa-type"></select></div>
+          </div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label" for="sa-debut">Du</label><input type="date" class="form-input" id="sa-debut" required></div>
+            <div class="form-group"><label class="form-label" for="sa-fin">Au (inclus)</label><input type="date" class="form-input" id="sa-fin" required></div>
+          </div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label" for="sa-jours">Nombre de jours ouvrables</label><input type="number" class="form-input" id="sa-jours" min="0.5" step="0.5" required></div>
+            <div class="form-group hidden" id="sa-bloc-volet3"><label class="form-label" for="sa-volet3">Volet 3 (facultatif)</label><input type="file" class="form-input" id="sa-volet3" accept="image/*,application/pdf"></div>
+          </div>
+          <div class="form-group"><label class="form-label" for="sa-commentaire">Commentaire</label><input class="form-input" id="sa-commentaire" maxlength="500" placeholder="Arrêt signalé par téléphone le…, formation…"></div>
+          <label style="font-size:.85rem;display:flex;gap:.5rem;align-items:center;"><input type="checkbox" id="sa-valider" checked> Valider directement</label>
+          <div class="grid2" id="sa-bloc-impact">
+            <div class="form-group"><label class="form-label" for="sa-impact">Effet sur la paie</label>
+              <select class="form-select" id="sa-impact"><option value="payee">Payée (pas de retenue)</option><option value="non_payee">Non payée (retenue sur salaire)</option><option value="rattrapee">Rattrapée (pas de retenue)</option></select></div>
+            <div class="form-group"><label class="form-label" for="sa-heures">Heures (si non payée)</label><input type="number" class="form-input" id="sa-heures" min="0.25" step="0.25"></div>
+          </div>
+          <div style="display:flex;gap:.5rem;">
+            <button type="submit" class="btn btn-primary" id="btn-saisie">Enregistrer</button>
+            <button type="button" class="btn btn-outline" onclick="basculerSaisie(false)">Annuler</button>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="card" id="liste-attente"></div>
+  </section>
 
   <section id="tab-planning" class="hidden">
     <div class="card">
@@ -432,6 +465,7 @@ function rendreAttente() {
         <div><strong>${esc(nomSal(d.salarie_id))}</strong> · ${esc(TYPES_RH[d.type])} · ${fmtPeriode(d.date_debut, d.date_fin)} · <strong>${Number(d.nb_jours).toLocaleString('fr-FR')} j</strong></div>
         ${solde !== null ? `<div class="muted">Solde actuel : ${solde.toLocaleString('fr-FR')} j → ${(solde - d.nb_jours).toLocaleString('fr-FR')} j après validation${solde - d.nb_jours < 0 ? ' <span class="badge badge-red">solde négatif</span>' : ''}</div>` : ''}
         ${d.commentaire ? `<div class="muted">« ${esc(d.commentaire)} »</div>` : ''}
+        ${d.saisie_par ? '<div><span class="badge badge-navy">Saisie par la présidence</span></div>' : ''}
         ${lienVolet3(d)}
         <div class="muted">Envoyée le ${fmtDate(d.created_at.slice(0, 10))}</div>
         ${alertesDemande(d)}
@@ -496,6 +530,71 @@ async function traiter(id, statut) {
   chargerTout();
 }
 
+// ---------- Saisie pour une salariée ----------
+function basculerSaisie(ouvrir) {
+  const f = document.getElementById('form-saisie');
+  const ouvre = ouvrir === undefined ? f.classList.contains('hidden') : ouvrir;
+  f.classList.toggle('hidden', !ouvre);
+  document.getElementById('btn-ouvrir-saisie').classList.toggle('hidden', ouvre);
+  if (ouvre) {
+    document.getElementById('sa-salarie').innerHTML = '<option value="">Choisir…</option>' +
+      salaries.filter(x => x.actif).map(x => `<option value="${x.id}">${esc(x.prenom)} ${esc(x.nom)}</option>`).join('');
+    document.getElementById('sa-type').innerHTML = Object.entries(TYPES_RH).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+    majSaisie();
+  } else document.getElementById('form-saisie').reset();
+}
+function majSaisie() {
+  const type = document.getElementById('sa-type').value, valider = document.getElementById('sa-valider').checked;
+  const s = salaries.find(x => x.id === document.getElementById('sa-salarie').value);
+  document.getElementById('sa-bloc-volet3').classList.toggle('hidden', type !== 'arret');
+  document.getElementById('sa-bloc-impact').classList.toggle('hidden', !valider || type === 'arret');
+  document.getElementById('sa-impact').value = impactDefaut({ type }, s);
+}
+function majJoursSaisie() {
+  const d1 = document.getElementById('sa-debut'), d2 = document.getElementById('sa-fin');
+  if (d1.value && (!d2.value || d2.value < d1.value)) d2.value = d1.value;
+  if (d1.value && d2.value) document.getElementById('sa-jours').value = joursOuvrables(d1.value, d2.value) || 0.5;
+}
+['sa-type', 'sa-valider', 'sa-salarie'].forEach(id => document.getElementById(id).addEventListener('change', majSaisie));
+['sa-debut', 'sa-fin'].forEach(id => document.getElementById(id).addEventListener('change', majJoursSaisie));
+document.getElementById('form-saisie').addEventListener('submit', async e => {
+  e.preventDefault();
+  const salarie_id = document.getElementById('sa-salarie').value, type = document.getElementById('sa-type').value;
+  const d1 = document.getElementById('sa-debut').value, d2 = document.getElementById('sa-fin').value;
+  const nb = Number(document.getElementById('sa-jours').value), valider = document.getElementById('sa-valider').checked;
+  if (!salarie_id) return toast('Choisissez la salariée.', 'error');
+  if (!d1 || !d2 || !(nb > 0)) return toast('Indiquez les dates et le nombre de jours.', 'error');
+  const { data: { user } } = await sb.auth.getUser();
+  const row = { salarie_id, type, date_debut: d1, date_fin: d2, nb_jours: nb,
+    commentaire: document.getElementById('sa-commentaire').value.trim() || null, saisie_par: user.id, statut: 'en_attente' };
+  if (valider) {
+    Object.assign(row, { statut: 'validee', traite_par: user.id, traite_le: new Date().toISOString() });
+    if (type !== 'arret') {
+      row.impact_paie = document.getElementById('sa-impact').value;
+      const h = Number(document.getElementById('sa-heures').value) || null;
+      if (row.impact_paie === 'non_payee' && !h) return toast("Indiquez le nombre d'heures non payées, pour la paie.", 'error');
+      row.heures = row.impact_paie === 'non_payee' ? h : null;
+    }
+  }
+  const btn = document.getElementById('btn-saisie');
+  btn.disabled = true;
+  const f = document.getElementById('sa-volet3').files[0];
+  if (type === 'arret' && f) {
+    if (f.size > 10 * 1024 * 1024) { btn.disabled = false; return toast('Fichier trop lourd (10 Mo maximum).', 'error'); }
+    const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const chemin = `${salarie_id}/${crypto.randomUUID()}.${ext}`;
+    const up = await sb.storage.from('justificatifs-rh').upload(chemin, f, { contentType: f.type || undefined, upsert: false });
+    if (up.error) { btn.disabled = false; return toast('Envoi du volet 3 impossible : ' + up.error.message, 'error'); }
+    row.justificatif_path = chemin;
+  }
+  const { error } = await sb.from('demandes_rh').insert(row);
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast(valider ? 'Demande saisie et validée.' : 'Demande saisie : elle attend validation.');
+  basculerSaisie(false);
+  chargerTout();
+});
+
 // ---------- Planning ----------
 function changerMois(n) {
   if (n === 0) moisAffiche = new Date();
@@ -537,6 +636,7 @@ function rendreHistorique() {
     <div>
       <div><strong>${esc(nomSal(d.salarie_id))}</strong> · ${esc(TYPES_RH[d.type])} · ${fmtPeriode(d.date_debut, d.date_fin)} · ${Number(d.nb_jours).toLocaleString('fr-FR')} j</div>
       ${d.reponse ? `<div class="muted">Réponse : ${esc(d.reponse)}</div>` : ''}
+      ${d.saisie_par ? '<div><span class="badge badge-navy">Saisie par la présidence</span></div>' : ''}
       ${lienVolet3(d)}
       ${d.statut === 'validee' && d.impact_paie ? `<div class="muted">Paie : ${IMPACTS[d.impact_paie]}${d.heures ? ` (${Number(d.heures).toLocaleString('fr-FR')} h)` : ''}</div>` : ''}
       ${d.traite_le ? `<div class="muted">Traitée le ${fmtDate(d.traite_le.slice(0, 10))}</div>` : ''}
