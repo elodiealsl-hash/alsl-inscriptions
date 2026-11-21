@@ -68,8 +68,8 @@
 
     <form class="main" id="form-note" novalidate>
       <h2>Nouvelle note</h2>
-      <label class="label">Objet du déplacement
-        <input type="text" class="field" id="objet" maxlength="120" placeholder="Compétition régionale à Toulon, réunion comité…" required>
+      <label class="label">Objet (déplacement ou achat)
+        <input type="text" class="field" id="objet" maxlength="120" placeholder="Compétition à Toulon, goûter du stage de Noël, ramette de papier…" required>
       </label>
       <div class="grid2">
         <label class="label">Du<input type="date" class="field" id="date_debut" required></label>
@@ -90,7 +90,7 @@
       <label class="label">Commentaire (facultatif)
         <textarea class="field" id="commentaire" rows="2" maxlength="500" placeholder="Covoiturage avec…, précisions utiles"></textarea>
       </label>
-      <p class="note">Joignez un justificatif pour chaque dépense (ticket, facture). Pour les kilomètres, le montant est calculé au barème fiscal selon la puissance de votre véhicule.</p>
+      <p class="note">Une note peut porter sur un déplacement ou sur un achat pour le club. Joignez un justificatif pour chaque dépense (ticket, facture). Pour les kilomètres, le montant est calculé au barème fiscal selon la puissance de votre véhicule.</p>
 
       <button type="submit" class="cta" id="btn-envoyer">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -158,7 +158,7 @@ const DON_ACTIF = false;
 
 const CATEGORIES = {
   km: 'Kilomètres (voiture perso)', peage: 'Péage', parking: 'Parking', transport: 'Train, bus, avion',
-  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Fournitures, achats', autre: 'Autre'
+  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Achats (goûters, papeterie, petit matériel)', autre: 'Autre'
 };
 const STATUTS_NF = {
   en_attente: ['st-attente', 'En attente'], validee: ['st-validee', 'Validée'], refusee: ['st-refusee', 'Refusée'],
@@ -274,7 +274,7 @@ function rendreLignes() {
         ${vehicules.length
           ? `<label class="label">Véhicule<select class="field select" onchange="maj(${l.id},'vehicule',this.value)">${optVeh(l.vehicule)}</select></label>`
           : `<div class="warn">Pour être remboursé(e) des kilomètres, enregistrez d'abord votre véhicule avec sa carte grise (une seule fois). <button type="button" class="mini" style="margin-top:8px;" onclick="montrer('vehicules')">Enregistrer mon véhicule</button></div>`}` : ''}
-      <label class="label">Précision<input type="text" class="field" maxlength="120" value="${esc(l.libelle)}" placeholder="${l.categorie === 'km' ? 'Lambesc → Toulon' : 'Restaurant, hôtel…'}" oninput="maj(${l.id},'libelle',this.value)"></label>
+      <label class="label">Précision<input type="text" class="field" maxlength="120" value="${esc(l.libelle)}" placeholder="${l.categorie === 'km' ? 'Lambesc → Toulon' : (l.categorie === 'fournitures' ? 'Goûter stage, ramette…' : 'Restaurant, hôtel…')}" oninput="maj(${l.id},'libelle',this.value)"></label>
       <label class="drop">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a5fa8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         ${l.fichiers.length ? 'Ajouter un autre justificatif' : (l.categorie === 'km' ? 'Justificatif (facultatif pour les km)' : 'Photo ou PDF du justificatif')}
@@ -314,8 +314,8 @@ document.getElementById('form-note').addEventListener('submit', async e => {
   const objet = document.getElementById('objet').value.trim();
   const d1 = document.getElementById('date_debut').value;
   const d2 = document.getElementById('date_fin').value || d1;
-  if (!objet) return toast("Indiquez l'objet du déplacement.", 'error');
-  if (!d1) return toast('Indiquez la date du déplacement.', 'error');
+  if (!objet) return toast("Indiquez l'objet de la note.", 'error');
+  if (!d1) return toast('Indiquez la date de la dépense.', 'error');
   for (const [i, l] of lignes.entries()) {
     if (l.categorie === 'km' && !vehicules.length) return toast("Enregistrez d'abord votre véhicule et sa carte grise (onglet Véhicules).", 'error');
     if (l.categorie === 'km' && (!l.vehicule || !(Number(l.km) > 0))) return toast(`Dépense ${i + 1} : indiquez les kilomètres et le véhicule.`, 'error');
