@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ALSL — Juges</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .ligne-juge { display:grid; grid-template-columns: 1fr 190px 90px 36px; gap:.5rem; align-items:center; margin-bottom:.5rem; }
+  .ligne-juge .mt { text-align:right; font-weight:700; }
+  .barre { height:8px; background:var(--gray-100); border-radius:4px; overflow:hidden; margin-top:.3rem; }
+  .barre > div { height:100%; background:var(--green, #2e9e5b); }
+  .barre.alerte > div { background:#e0a100; } .barre.depasse > div { background:#c0392b; }
+  .barree { text-decoration: line-through; opacity:.6; }
+  .chips { display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem; }
+  .chip { border:1px solid var(--gray-200, #ddd); background:#fff; border-radius:999px; padding:.3rem .8rem; cursor:pointer; font:inherit; font-size:.85rem; }
+  .chip.active { background:var(--navy, #1d2b4f); color:#fff; border-color:transparent; }
+  @media (max-width: 640px) { .brand-sub { display:none; } .list-item { flex-direction:column; align-items:stretch; } .ligne-juge { grid-template-columns: 1fr 1fr; } .ligne-juge .mt { text-align:left; } }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <div class="brand">
+    <img src="logo-alsl.jpg" alt="Logo ALSL">
+    <div><div class="brand-title">ALSL — Juges</div><div class="brand-sub">États de présence · validation · paiement · reçus</div></div>
+  </div>
+  <div class="nav-right" id="nav-right"></div>
+</nav>
+<div class="toasts" id="toasts"></div>
+
+<div class="wrap-narrow" id="ecran-connexion">
+  <div class="card">
+    <div class="card-header"><h3>Connexion</h3></div>
+    <div class="card-body">
+      <input type="email" class="form-input" id="email" placeholder="E-mail" autocomplete="email">
+      <div style="position:relative;">
+        <input type="password" class="form-input" id="mdp" placeholder="Mot de passe" autocomplete="current-password" style="padding-right:2.6rem;">
+        <button type="button" id="oeil" aria-label="Afficher le mot de passe" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:1rem;">👁</button>
+      </div>
+      <button class="btn btn-primary" id="btn-connexion">Se connecter</button>
+      <button class="btn btn-outline" id="btn-lien">Recevoir plutôt un lien par e-mail</button>
+      <a href="mot-de-passe.html" class="hint" style="text-align:center;">Mot de passe oublié ou à changer ?</a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap-narrow hidden" id="ecran-refus">
+  <div class="alert alert-error">Ce compte n'a pas accès à l'espace juges.</div>
+</div>
+
+<div class="wrap hidden" id="ecran-juges">
+  <div class="tabs">
+    <button class="tab active" data-tab="etats">États<span class="count" id="nb-etats">0</span></button>
+    <button class="tab saisie-only" data-tab="nouveau">Nouvel état</button>
+    <button class="tab" data-tab="annuaire">Juges</button>
+    <button class="tab" data-tab="cumul">Cumul annuel</button>
+    <button class="tab hidden" data-tab="parametres" id="tab-btn-parametres">Paramètres</button>
+  </div>
+
+  <!-- ===== États ===== -->
+  <section id="tab-etats">
+    <div class="chips" id="filtres">
+      <button class="chip active" data-f="actifs">À traiter</button>
+      <button class="chip" data-f="en_attente">En attente</button>
+      <button class="chip" data-f="validee">Validés</button>
+      <button class="chip" data-f="enveloppes">Remise en cours</button>
+      <button class="chip" data-f="payee">Payés</button>
+      <button class="chip" data-f="annulee">Annulés</button>
+    </div>
+    <div class="card"><div id="liste-etats"><div class="card-body muted">Chargement…</div></div></div>
+    <span class="hint">Circuit : saisie (secrétariat) → validation (présidente ou vice-présidente) → paiement (trésorière). La personne qui a validé un état ne peut pas le payer. Espèces : la trésorière prépare les enveloppes, puis chaque juge signe sur le téléphone au moment où on lui remet la sienne (Lauriane, Cécile, Élodie ou Malorie). L'état passe à « Payé » quand tous ont signé. Les juges salariés du club n'ont pas de reçu : leur indemnité passe sur la fiche de paie.</span>
+  </section>
+
+  <!-- ===== Nouvel état ===== -->
+  <section id="tab-nouveau" class="hidden">
+    <div class="card">
+      <div class="card-header"><h3 id="titre-form">Nouvel état de juges</h3><button class="btn btn-sm btn-outline hidden" id="btn-abandon" onclick="resetForm()">Abandonner la modification</button></div>
+      <div class="card-body">
+        <div class="grid2">
+          <div class="form-group"><label class="form-label" for="f-evenement">Compétition / événement</label><input class="form-input" id="f-evenement" maxlength="120" placeholder="Ex. Coupe départementale GAF"></div>
+          <div class="form-group"><label class="form-label" for="f-date">Date</label><input type="date" class="form-input" id="f-date"></div>
+          <div class="form-group"><label class="form-label" for="f-lieu">Lieu</label><input class="form-input" id="f-lieu" maxlength="80" value="Lambesc" list="lieux"><datalist id="lieux"><option value="Lambesc"></datalist></div>
+          <div class="form-group"><label class="form-label" for="f-organisateur">Organisateur de la compétition</label><input class="form-input" id="f-organisateur" maxlength="80" value="ALSL" placeholder="ALSL, comité départemental…"></div>
+        </div>
+        <label class="form-label">Juges présents</label>
+        <div id="f-lignes"></div>
+        <button class="btn btn-sm btn-outline" onclick="ajouterLigne()">+ Ajouter un juge</button>
+        <div class="form-group" style="margin-top:1rem;"><label class="form-label" for="f-commentaire">Commentaire (facultatif)</label><input class="form-input" id="f-commentaire" maxlength="200"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:.5rem;">
+          <div><strong>Total : <span id="f-total">0,00 €</span></strong><div class="muted" id="f-detail"></div></div>
+          <button class="btn btn-primary" id="btn-enregistrer" onclick="enregistrer()">Enregistrer l'état</button>
+        </div>
+        <span class="hint">Les montants sont calculés automatiquement d'après la grille du club (niveau du juge × créneau). Un juge absent de la liste s'ajoute dans l'onglet « Juges ».</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Annuaire ===== -->
+  <section id="tab-annuaire" class="hidden">
+    <div class="card saisie-only">
+      <div class="card-header"><h3>Ajouter un juge</h3></div>
+      <div class="card-body">
+        <div class="grid2">
+          <input class="form-input" id="j-prenom" placeholder="Prénom" maxlength="50">
+          <input class="form-input" id="j-nom" placeholder="Nom" maxlength="50">
+          <select class="form-select form-input" id="j-niveau" aria-label="Niveau"><option value="1">Niveau 1</option><option value="2">Niveau 2</option><option value="3">Niveau 3</option><option value="4">Niveau 4</option></select>
+          <input class="form-input" id="j-club" placeholder="Club d'appartenance" maxlength="80">
+          <input type="email" class="form-input" id="j-email" placeholder="E-mail (facultatif)" maxlength="120">
+          <label style="display:flex;gap:.5rem;align-items:center;"><input type="checkbox" id="j-salarie"> Salarié(e) de l'ALSL</label>
+        </div>
+        <button class="btn btn-primary" style="margin-top:.75rem;" onclick="ajouterJuge()">Ajouter</button>
+        <span class="hint">« Salarié(e) de l'ALSL » : l'indemnité de juge est alors versée sur la fiche de paie, sans reçu ni paiement séparé.</span>
+      </div>
+    </div>
+    <div class="card"><div class="card-header"><h3>Annuaire</h3><span class="muted" id="nb-juges"></span></div><div id="liste-juges"></div></div>
+    <div class="card"><div class="card-header"><h3>Grille d'indemnisation</h3></div><div class="card-body" id="grille"></div></div>
+  </section>
+
+  <!-- ===== Cumul ===== -->
+  <section id="tab-cumul" class="hidden">
+    <div class="card">
+      <div class="card-header"><h3>Cumul annuel par juge</h3>
+        <select class="form-select form-input" id="cumul-annee" style="width:auto;" aria-label="Année"></select></div>
+      <div class="card-body" style="padding-bottom:0;"><div class="alert alert-info" id="cumul-info"></div></div>
+      <div id="liste-cumul"></div>
+      <div class="card-body"><button class="btn btn-outline" onclick="exporterCumul()">Télécharger le cumul (.xlsx)</button></div>
+    </div>
+  </section>
+
+  <!-- ===== Paramètres (présidence) ===== -->
+  <section id="tab-parametres" class="hidden">
+    <div class="card">
+      <div class="card-header"><h3>Signature et tampon des reçus</h3></div>
+      <div class="card-body">
+        <p class="muted">Ils sont stockés dans la base, accessibles uniquement aux comptes de l'espace juges, et jamais dans les fichiers publics du site. À faire une seule fois.</p>
+        <div class="grid2">
+          <div><label class="form-label" for="up-signature">Signature de la présidente (PNG)</label><input type="file" accept="image/*" id="up-signature" class="form-input"><div id="ap-signature" style="margin-top:.5rem;"></div></div>
+          <div><label class="form-label" for="up-tampon">Tampon ALSL (PNG)</label><input type="file" accept="image/*" id="up-tampon" class="form-input"><div id="ap-tampon" style="margin-top:.5rem;"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="hidden" id="modale-sig" style="position:fixed;inset:0;background:rgba(10,20,45,.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:12px;">
+  <div class="card" style="width:min(640px,100%);margin:0;">
+    <div class="card-header"><h3 id="sig-modale-titre">Remise de l'enveloppe</h3><button class="btn btn-sm btn-outline" onclick="fermerSignature()">Fermer</button></div>
+    <div class="card-body" id="sig-saisie">
+      <p id="sig-texte" style="line-height:1.5;"></p>
+      <p class="muted" style="margin:.5rem 0 .3rem;">Signature du juge (au doigt) :</p>
+      <canvas id="sig-canvas" style="width:100%;height:220px;border:2px dashed var(--gray-200, #ccd);border-radius:10px;background:#fff;touch-action:none;display:block;"></canvas>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem;">
+        <button class="btn btn-outline" onclick="effacerSignature()">Effacer</button>
+        <button class="btn btn-green" style="flex:1;" onclick="validerSignature(false)">Valider la signature</button>
+      </div>
+      <button class="btn btn-sm btn-outline" style="margin-top:.6rem;" onclick="validerSignature(true)">Le juge a signé un reçu papier à la place</button>
+      <span class="hint">Remettez l'enveloppe une fois la signature validée.</span>
+    </div>
+    <div class="card-body hidden" id="sig-partage">
+      <p id="sig-partage-texte" style="line-height:1.5;"></p>
+      <img id="sig-apercu" alt="Aperçu du reçu" style="width:100%;max-height:40vh;object-fit:contain;border:1px solid var(--gray-200, #ddd);border-radius:8px;background:#fff;">
+      <button class="btn btn-green" id="btn-partager" style="width:100%;margin-top:.75rem;" onclick="partagerRecu()">Envoyer le reçu (SMS, WhatsApp, mail…)</button>
+      <button class="btn btn-outline" style="width:100%;margin-top:.5rem;" onclick="fermerSignature()">Terminer</button>
+      <span class="hint">Le reçu part depuis votre téléphone, vers le contact que vous choisissez.</span>
+    </div>
+  </div>
+</div>
+<script src="rh-commun.js"></script>
+<script>
+const CRENEAUX = { demi: '½ journée (3h30)', journee: 'Journée (7h)', journee_plus: 'Journée + (plus de 7h)' };
+const STATUTS = { en_attente: ['En attente de validation', 'badge-gold'], validee: ['Validé — à payer', 'badge-navy'], enveloppes: ['Enveloppes prêtes — remise en cours', 'badge-gold'], payee: ['Payé', 'badge-green'], annulee: ['Annulé', 'badge-red'] };
+const MODES = { virement: 'virement', cheque: 'chèque', especes: 'espèces' };
+// Plafond annuel de la Sécurité sociale — à compléter chaque année
+const PASS = { 2026: 48060 };
+const euro = n => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+const ej = e => 'EJ' + String(e.numero || 0).padStart(3, '0');
+const fr = d => d ? d.split('-').reverse().join('/') : '';
+const auj = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+let monId = null, role = { saisie: false, valideur: false, tresorier: false, admin: false };
+let juges = [], tarifs = [], etats = [], filtre = 'actifs', enEdition = null, visuels = {};
+
+// ---------- Connexion ----------
+document.getElementById('oeil').onclick = () => {
+  const i = document.getElementById('mdp'), o = document.getElementById('oeil');
+  i.type = i.type === 'password' ? 'text' : 'password';
+  o.textContent = i.type === 'password' ? '👁' : '🙈';
+};
+document.getElementById('mdp').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-connexion').click(); });
+document.getElementById('btn-connexion').onclick = async () => {
+  const email = document.getElementById('email').value.trim(), password = document.getElementById('mdp').value;
+  if (!email || !password) return toast('Remplissez les deux champs.', 'error');
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) return toast('Identifiants incorrects.', 'error');
+  init();
+};
+document.getElementById('btn-lien').onclick = () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre e-mail.', 'error');
+  envoyerLienConnexion(email);
+};
+
+let demarre = false;
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session || demarre) return;
+  demarre = true;
+  document.getElementById('ecran-connexion').classList.add('hidden');
+  const [s, v, t, a] = await Promise.all([sb.rpc('is_saisie_juges'), sb.rpc('is_rh_valideur'), sb.rpc('is_rh_tresorier'), sb.rpc('is_admin')]);
+  role = { saisie: !!s.data, valideur: !!v.data, tresorier: !!t.data, admin: !!a.data };
+  document.getElementById('nav-right').innerHTML =
+    `${role.tresorier || role.valideur ? `<a class="btn btn-sm btn-ghost-light" href="${role.valideur ? 'rh-admin.html' : 'tresorerie.html'}">${role.valideur ? 'Espace présidence' : 'Trésorerie'}</a>` : ''}<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+  if (!role.saisie && !role.tresorier) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
+  monId = session.user.id;
+  document.querySelectorAll('.saisie-only').forEach(el => el.classList.toggle('hidden', !role.saisie));
+  if (role.valideur && role.admin) document.getElementById('tab-btn-parametres').classList.remove('hidden');
+  document.getElementById('ecran-juges').classList.remove('hidden');
+  document.getElementById('f-date').value = auj();
+  await chargerRef();
+  await chargerEtats();
+  chargerVisuels();
+}
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') setTimeout(init, 0); });
+init();
+
+// ---------- Onglets / filtres ----------
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('section[id^="tab-"]').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + t.dataset.tab));
+  if (t.dataset.tab === 'cumul') rendreCumul();
+});
+function allerOnglet(nom) { document.querySelector(`.tab[data-tab="${nom}"]`).click(); window.scrollTo(0, 0); }
+document.querySelectorAll('#filtres .chip').forEach(c => c.onclick = () => {
+  filtre = c.dataset.f;
+  document.querySelectorAll('#filtres .chip').forEach(x => x.classList.toggle('active', x === c));
+  rendreEtats();
+});
+
+// ---------- Données de référence ----------
+async function chargerRef() {
+  const [j, t] = await Promise.all([
+    sb.from('juges').select('*').order('nom'),
+    sb.from('juges_tarifs').select('*')
+  ]);
+  if (j.error) return toast('Erreur de chargement des juges : ' + j.error.message, 'error');
+  juges = j.data || []; tarifs = t.data || [];
+  rendreAnnuaire();
+  if (!document.querySelector('#f-lignes .ligne-juge')) ajouterLigne();
+}
+const tarif = (niveau, creneau) => (tarifs.find(t => t.groupe === (niveau <= 2 ? '1-2' : '3-4') && t.creneau === creneau) || {}).montant || 0;
+const nomJuge = j => `${j.prenom} ${j.nom}`;
+
+// ---------- Annuaire ----------
+function rendreAnnuaire() {
+  const actifs = juges.filter(j => j.actif).length;
+  document.getElementById('nb-juges').textContent = `${actifs} actif(s)`;
+  document.getElementById('liste-juges').innerHTML = !juges.length ? '<div class="card-body muted">Aucun juge enregistré.</div>' : juges.map(j => `
+    <div class="list-item" ${j.actif ? '' : 'style="opacity:.55"'}>
+      <div style="flex:1;min-width:0;">
+        <div><strong>${esc(nomJuge(j))}</strong> <span class="badge badge-gray">Niveau ${j.niveau}</span> ${j.salarie_club ? '<span class="badge badge-gold">Salarié(e) ALSL — paie</span>' : ''} ${j.actif ? '' : '<span class="badge badge-red">Inactif</span>'}</div>
+        <div class="muted">${esc(j.club || 'Club non renseigné')}${j.email ? ' · ' + esc(j.email) : ''}</div>
+      </div>
+      ${role.saisie ? `<div style="display:flex;gap:.4rem;flex-wrap:wrap;justify-content:flex-end;">
+        <select class="form-select form-input" style="width:auto;" aria-label="Niveau" onchange="majJuge('${j.id}', { niveau: +this.value })">${[1, 2, 3, 4].map(n => `<option value="${n}" ${n === j.niveau ? 'selected' : ''}>Niv. ${n}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-outline" onclick="majJuge('${j.id}', { salarie_club: ${!j.salarie_club} })">${j.salarie_club ? 'Pas salarié(e)' : 'Salarié(e) ALSL'}</button>
+        <button class="btn btn-sm btn-outline" onclick="majJuge('${j.id}', { actif: ${!j.actif} })">${j.actif ? 'Désactiver' : 'Réactiver'}</button>
+      </div>` : ''}
+    </div>`).join('');
+  document.getElementById('grille').innerHTML = `<div class="scroll-x"><table style="width:100%;border-collapse:collapse;">
+    <tr><th style="text-align:left;">Niveau</th>${Object.values(CRENEAUX).map(c => `<th style="text-align:right;">${c}</th>`).join('')}</tr>
+    ${['1-2', '3-4'].map(g => `<tr><td>${g.replace('-', ' et ')}</td>${Object.keys(CRENEAUX).map(c => `<td style="text-align:right;">${euro((tarifs.find(t => t.groupe === g && t.creneau === c) || {}).montant)}</td>`).join('')}</tr>`).join('')}
+  </table></div>`;
+}
+async function ajouterJuge() {
+  const v = id => document.getElementById(id).value.trim();
+  const row = { prenom: v('j-prenom'), nom: v('j-nom').toUpperCase(), niveau: +v('j-niveau'), club: v('j-club') || null, email: v('j-email') || null, salarie_club: document.getElementById('j-salarie').checked };
+  if (!row.prenom || !row.nom) return toast('Prénom et nom obligatoires.', 'error');
+  if (juges.some(j => j.nom === row.nom && j.prenom.toLowerCase() === row.prenom.toLowerCase())) return toast('Ce juge existe déjà.', 'error');
+  const { error } = await sb.from('juges').insert(row);
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  ['j-prenom', 'j-nom', 'j-club', 'j-email'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('j-salarie').checked = false;
+  toast('Juge ajouté.');
+  await chargerRef(); rafraichirSelects();
+}
+async function majJuge(id, champs) {
+  const { error } = await sb.from('juges').update(champs).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  await chargerRef(); rafraichirSelects();
+}
+
+// ---------- Formulaire d'état ----------
+function optionsJuges(sel) {
+  const liste = juges.filter(j => j.actif || j.id === sel);
+  return '<option value="">— Choisir un juge —</option>' + liste.map(j => `<option value="${j.id}" ${j.id === sel ? 'selected' : ''}>${esc(nomJuge(j))} (niv. ${j.niveau}${j.salarie_club ? ', salarié(e)' : ''})</option>`).join('');
+}
+function ajouterLigne(jugeId = '', creneau = 'journee') {
+  const d = document.createElement('div'); d.className = 'ligne-juge';
+  d.innerHTML = `<select class="form-select form-input sel-juge" aria-label="Juge">${optionsJuges(jugeId)}</select>
+    <select class="form-select form-input sel-creneau" aria-label="Créneau">${Object.entries(CRENEAUX).map(([k, l]) => `<option value="${k}" ${k === creneau ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <span class="mt">—</span>
+    <button class="btn btn-sm btn-outline" aria-label="Retirer" onclick="this.parentElement.remove();calculer();">✕</button>`;
+  d.querySelectorAll('select').forEach(s => s.onchange = calculer);
+  document.getElementById('f-lignes').appendChild(d);
+  calculer();
+}
+function rafraichirSelects() {
+  document.querySelectorAll('#f-lignes .sel-juge').forEach(s => { const v = s.value; s.innerHTML = optionsJuges(v); });
+  calculer();
+}
+function lireLignes() {
+  return [...document.querySelectorAll('#f-lignes .ligne-juge')].map(d => ({ el: d, juge_id: d.querySelector('.sel-juge').value, creneau: d.querySelector('.sel-creneau').value }));
+}
+function calculer() {
+  let tot = 0, paie = 0;
+  lireLignes().forEach(l => {
+    const j = juges.find(x => x.id === l.juge_id);
+    const m = j ? tarif(j.niveau, l.creneau) : 0;
+    l.el.querySelector('.mt').textContent = j ? euro(m) : '—';
+    tot += Number(m); if (j && j.salarie_club) paie += Number(m);
+  });
+  document.getElementById('f-total').textContent = euro(tot);
+  document.getElementById('f-detail').textContent = paie ? `dont ${euro(paie)} à passer sur la paie (salarié·es) · ${euro(tot - paie)} à verser aux juges` : '';
+}
+function resetForm() {
+  enEdition = null;
+  document.getElementById('titre-form').textContent = 'Nouvel état de juges';
+  document.getElementById('btn-abandon').classList.add('hidden');
+  ['f-evenement', 'f-commentaire'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-lieu').value = 'Lambesc';
+  document.getElementById('f-organisateur').value = 'ALSL';
+  document.getElementById('f-date').value = auj();
+  document.getElementById('f-lignes').innerHTML = '';
+  ajouterLigne();
+}
+function modifier(id) {
+  const e = etats.find(x => x.id === id);
+  enEdition = id;
+  document.getElementById('titre-form').textContent = `Modifier l'état ${ej(e)}`;
+  document.getElementById('btn-abandon').classList.remove('hidden');
+  document.getElementById('f-evenement').value = e.evenement;
+  document.getElementById('f-date').value = e.date_evenement;
+  document.getElementById('f-lieu').value = e.lieu;
+  document.getElementById('f-organisateur').value = e.organisateur;
+  document.getElementById('f-commentaire').value = e.commentaire || '';
+  document.getElementById('f-lignes').innerHTML = '';
+  lignesTriees(e).filter(l => !l.annulee).forEach(l => ajouterLigne(l.juge_id, l.creneau));
+  allerOnglet('nouveau');
+}
+async function enregistrer() {
+  const etat = {
+    evenement: document.getElementById('f-evenement').value.trim(), date_evenement: document.getElementById('f-date').value,
+    lieu: document.getElementById('f-lieu').value.trim(), organisateur: document.getElementById('f-organisateur').value.trim(),
+    commentaire: document.getElementById('f-commentaire').value.trim()
+  };
+  if (!etat.evenement || !etat.date_evenement || !etat.lieu) return toast('Compétition, date et lieu sont obligatoires.', 'error');
+  const lignes = lireLignes();
+  if (!lignes.length || lignes.some(l => !l.juge_id)) return toast('Choisissez un juge sur chaque ligne (ou retirez la ligne vide).', 'error');
+  const cles = lignes.map(l => l.juge_id);
+  if (new Set(cles).size !== cles.length) return toast('Un même juge figure deux fois : gardez une seule ligne avec le bon créneau.', 'error');
+  const btn = document.getElementById('btn-enregistrer'); btn.disabled = true;
+  const { error } = await sb.rpc('enregistrer_etat_juges', { p_etat: etat, p_lignes: lignes.map(l => ({ juge_id: l.juge_id, creneau: l.creneau })), p_id: enEdition });
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast(enEdition ? 'État modifié.' : 'État enregistré : il part en validation.');
+  resetForm();
+  await chargerEtats();
+  allerOnglet('etats');
+}
+
+// ---------- Liste des états ----------
+async function chargerEtats() {
+  const { data, error } = await sb.from('etats_juges').select('*, etats_juges_lignes(*)').order('date_evenement', { ascending: false }).limit(300);
+  if (error) return toast('Erreur de chargement des états : ' + error.message, 'error');
+  etats = data || [];
+  rendreEtats();
+}
+const lignesTriees = e => (e.etats_juges_lignes || []).sort((a, b) => a.ordre - b.ordre);
+const montants = e => {
+  const ok = lignesTriees(e).filter(l => !l.annulee);
+  const paie = ok.filter(l => l.salarie_club).reduce((s, l) => s + Number(l.montant), 0);
+  const verse = ok.filter(l => !l.salarie_club).reduce((s, l) => s + Number(l.montant), 0);
+  return { paie, verse, recus: ok.filter(l => !l.salarie_club) };
+};
+function aFaire(e) {
+  if (e.statut === 'en_attente') return role.valideur || (role.saisie && !role.tresorier);
+  if (e.statut === 'validee') return (role.tresorier || role.valideur) && e.valide_par !== monId;
+  if (e.statut === 'enveloppes') return role.saisie || role.tresorier;
+  return false;
+}
+function rendreEtats() {
+  const nb = etats.filter(aFaire).length;
+  document.getElementById('nb-etats').textContent = nb;
+  const liste = filtre === 'actifs' ? etats.filter(e => ['en_attente', 'validee', 'enveloppes'].includes(e.statut)) : etats.filter(e => e.statut === filtre);
+  document.getElementById('liste-etats').innerHTML = !liste.length ? '<div class="card-body muted">Aucun état dans cette liste.</div>' : liste.map(carteEtat).join('');
+}
+function carteEtat(e) {
+  const [lib, cls] = STATUTS[e.statut];
+  const m = montants(e);
+  const peutAnnulerLigne = (e.statut === 'en_attente' && role.saisie) || (e.statut === 'validee' && role.valideur);
+  const peutRemettre = e.statut === 'enveloppes' && (role.saisie || role.tresorier);
+  const peutRendre = e.statut === 'enveloppes' && (role.tresorier || role.valideur);
+  const lignes = lignesTriees(e).map(l => {
+    let droite;
+    if (l.annulee) droite = `<em>${l.rendue ? 'enveloppe rendue' : 'annulé'}${l.motif_annulation ? ' — ' + esc(l.motif_annulation) : ''}</em>`;
+    else {
+      droite = `<strong>${euro(l.montant)}</strong>`;
+      if (!l.salarie_club && l.signe_le) droite += ` <span class="badge badge-green" title="Remis par ${esc(l.signe_par_nom || '')}">✓ ${l.recu_papier ? 'reçu papier' : 'signé'} le ${fr(l.signe_le.slice(0, 10))}</span>`;
+      if (!l.salarie_club && l.signature) droite += ` <button class="btn btn-sm btn-outline" style="padding:.1rem .55rem;margin-left:.3rem;" onclick="envoyerRecu('${l.id}')">Envoyer le reçu</button>`;
+      if (!l.salarie_club && !l.signe_le && peutRemettre) droite += ` <button class="btn btn-sm btn-green" style="padding:.1rem .55rem;margin-left:.3rem;" onclick="ouvrirSignature('${l.id}')">Remettre l'enveloppe</button>`;
+      if (!l.salarie_club && !l.signe_le && peutRendre) droite += ` <button class="btn btn-sm btn-outline" style="padding:.1rem .55rem;margin-left:.3rem;" onclick="rendreEnveloppe('${l.id}')">Rendue</button>`;
+      if (peutAnnulerLigne) droite += ` <button class="btn btn-sm btn-outline" style="padding:.05rem .45rem;margin-left:.3rem;" title="Annuler ce juge" onclick="annulerLigne('${l.id}')">✕</button>`;
+    }
+    return `<div class="muted" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;border-top:1px solid var(--gray-100);padding-top:.3rem;margin-top:.3rem;">
+      <span class="${l.annulee ? 'barree' : ''}">${esc(l.juge_nom)} · niv. ${l.niveau} · ${CRENEAUX[l.creneau]}${l.salarie_club ? ' <span class="badge badge-gold">paie</span>' : ''}</span>
+      <span style="white-space:nowrap;">${droite}</span></div>`;
+  }).join('');
+
+  let actions = '', bloc = '', boutonPayer = '';
+  if (e.statut === 'en_attente') {
+    if (role.saisie) actions += `<button class="btn btn-sm btn-outline" onclick="modifier('${e.id}')">Modifier</button>`;
+    if (role.valideur) actions += `<button class="btn btn-sm btn-green" onclick="valider('${e.id}')">Valider</button>`;
+    if (role.saisie) actions += `<button class="btn btn-sm btn-red" onclick="annulerEtat('${e.id}', false)">Annuler l'état</button>`;
+  }
+  if (e.statut === 'validee') {
+    if (role.valideur) actions += `<button class="btn btn-sm btn-outline" onclick="devalider('${e.id}')">Remettre en attente</button><button class="btn btn-sm btn-red" onclick="annulerEtat('${e.id}', false)">Annuler l'état</button>`;
+    if ((role.tresorier || role.valideur) && m.recus.length) {
+      if (e.valide_par === monId) bloc = `<div class="alert alert-info" style="margin-top:.5rem;">Vous avez validé cet état : l'argent est préparé par la trésorière.</div>`;
+      else {
+        bloc = `<div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap;align-items:center;">
+          <select class="form-select form-input" id="mode-${e.id}" style="width:auto;" aria-label="Mode de paiement" onchange="document.getElementById('autres-${e.id}').classList.toggle('hidden', this.value === 'especes')">
+            <option value="especes">Espèces (enveloppes)</option><option value="virement">Virement</option><option value="cheque">Chèque</option>
+          </select>
+          <span id="autres-${e.id}" class="hidden" style="display:contents;">
+            <input type="date" class="form-input" id="date-${e.id}" value="${auj()}" style="width:auto;" aria-label="Date de paiement">
+            <input class="form-input" id="ref-${e.id}" placeholder="N° de chèque ou libellé du virement" maxlength="80" style="flex:1;min-width:180px;">
+          </span></div>`;
+        boutonPayer = `<button class="btn btn-sm btn-green" onclick="payer('${e.id}')">Enregistrer</button>`;
+      }
+    }
+  }
+  if (e.statut === 'enveloppes') {
+    const signes = m.recus.filter(l => l.signe_le).length;
+    bloc = `<div class="alert alert-info" style="margin-top:.5rem;">Enveloppes préparées le ${fr((e.enveloppes_le || '').slice(0, 10))} · actuellement chez <strong>${esc(e.detenteur_nom || '—')}</strong> · ${signes}/${m.recus.length} remise(s) signée(s)</div>`;
+    if ((role.saisie || role.tresorier) && e.detenteur !== monId) actions += `<button class="btn btn-sm btn-primary" onclick="recevoirEnveloppes('${e.id}')">J'ai reçu les enveloppes</button>`;
+    if (role.valideur && !signes) actions += `<button class="btn btn-sm btn-red" onclick="annulerEtat('${e.id}', true)">Annuler (motif obligatoire)</button>`;
+  }
+  if (e.statut === 'payee' && role.valideur) actions += `<button class="btn btn-sm btn-red" onclick="annulerEtat('${e.id}', true)">Annuler (motif obligatoire)</button>`;
+  if (['validee', 'enveloppes', 'payee'].includes(e.statut) && m.recus.length)
+    actions += `<button class="btn btn-sm btn-outline" onclick="imprimerRecus('${e.id}')">${e.statut === 'payee' ? 'Reçus' : 'Reçus papier'} (${m.recus.length})</button>`;
+
+  const suivi = [
+    e.valide_le ? `validé le ${fr(e.valide_le.slice(0, 10))}` : '',
+    e.statut === 'payee' ? `payé le ${fr(e.date_paiement)} par ${MODES[e.mode_paiement] || '—'}${e.reference_paiement ? ' · ' + esc(e.reference_paiement) : ''}` : '',
+    e.statut === 'annulee' ? `annulé le ${fr((e.annule_le || '').slice(0, 10))}${e.motif_annulation ? ' — ' + esc(e.motif_annulation) : ''}` : ''
+  ].filter(Boolean).join(' · ');
+
+  return `<div class="list-item">
+    <div style="flex:1;min-width:0;">
+      <div><span class="badge badge-gray">${ej(e)}</span> <span class="badge ${cls}">${lib}</span> <strong>${esc(e.evenement)}</strong></div>
+      <div class="muted">${fr(e.date_evenement)} · ${esc(e.lieu)} · organisé par ${esc(e.organisateur)}${e.commentaire ? ' · ' + esc(e.commentaire) : ''}</div>
+      ${lignes}
+      ${suivi ? `<div class="muted" style="margin-top:.3rem;">${suivi}</div>` : ''}
+      ${bloc}
+      ${actions ? `<div style="display:flex;gap:.4rem;margin-top:.6rem;flex-wrap:wrap;">${actions}</div>` : ''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.4rem;align-items:flex-end;">
+      <strong style="font-size:1.1rem;white-space:nowrap;">${euro(m.verse)}</strong>
+      ${m.paie ? `<span class="muted" style="white-space:nowrap;">+ ${euro(m.paie)} sur la paie</span>` : ''}
+      ${boutonPayer}
+    </div>
+  </div>`;
+}
+
+// ---------- Actions ----------
+async function rpc(nom, args, ok) {
+  const { error } = await sb.rpc(nom, args);
+  if (error) { toast('Erreur : ' + error.message, 'error'); return false; }
+  toast(ok); await chargerEtats(); return true;
+}
+const valider = id => rpc('valider_etat_juges', { p_id: id }, 'État validé : il part en paiement.');
+const devalider = id => rpc('devalider_etat_juges', { p_id: id }, 'État remis en attente.');
+function annulerLigne(id) {
+  const motif = prompt('Motif de l\'annulation de ce juge (absence, erreur de saisie…) :');
+  if (motif === null) return;
+  rpc('annuler_ligne_juge', { p_ligne: id, p_motif: motif.trim() }, 'Juge retiré de l\'état.');
+}
+function annulerEtat(id, obligatoire) {
+  const motif = prompt(obligatoire ? 'Motif de l\'annulation (obligatoire) :' : 'Motif de l\'annulation de l\'état :');
+  if (motif === null) return;
+  if (obligatoire && !motif.trim()) return toast('Le motif est obligatoire.', 'error');
+  rpc('annuler_etat_juges', { p_id: id, p_motif: motif.trim() }, 'État annulé.');
+}
+async function payer(id) {
+  const e = etats.find(x => x.id === id), m = montants(e);
+  const mode = document.getElementById('mode-' + id).value;
+  if (mode === 'especes') {
+    if (!confirm(`Préparer ${m.recus.length} enveloppe(s) pour un total de ${euro(m.verse)} ?\n\n${m.recus.map(l => `• ${l.juge_nom} : ${euro(l.montant)}`).join('\n')}\n\nNotez le nom du juge et le montant sur chaque enveloppe.${m.paie ? `\n\n${euro(m.paie)} restent à passer sur la paie des salarié·es (pas d'enveloppe).` : ''}`)) return;
+    return rpc('preparer_enveloppes_juges', { p_id: id }, 'Enveloppes prêtes. Chaque juge signera à la remise.');
+  }
+  const date = document.getElementById('date-' + id).value, ref = document.getElementById('ref-' + id).value.trim() || null;
+  if (!date) return toast('Indiquez la date de paiement.', 'error');
+  if (mode === 'cheque' && !ref) return toast('Indiquez le ou les numéros de chèque.', 'error');
+  if (!confirm(`Confirmer le paiement de ${euro(m.verse)} par ${MODES[mode]} le ${fr(date)} ?`)) return;
+  rpc('payer_etat_juges', { p_id: id, p_mode: mode, p_reference: ref, p_date: date, p_recus_signes: true }, 'État marqué payé.');
+}
+function recevoirEnveloppes(id) {
+  const e = etats.find(x => x.id === id), m = montants(e);
+  const reste = m.recus.filter(l => !l.signe_le);
+  if (!confirm(`Je confirme avoir reçu ${reste.length} enveloppe(s) pour un total de ${euro(reste.reduce((s, l) => s + Number(l.montant), 0))}.`)) return;
+  rpc('recevoir_enveloppes_juges', { p_id: id }, 'Réception des enveloppes enregistrée.');
+}
+function rendreEnveloppe(id) {
+  const motif = prompt('Enveloppe non distribuée et rendue à la trésorerie. Motif (absence…) :', 'Juge absent');
+  if (motif === null) return;
+  rpc('rendre_enveloppe_juge', { p_ligne: id, p_motif: motif.trim() }, 'Enveloppe rendue enregistrée.');
+}
+
+// ---------- Signature du juge sur écran ----------
+let sigLigne = null, sigTraits = 0;
+function trouverLigne(id) { for (const e of etats) { const l = (e.etats_juges_lignes || []).find(x => x.id === id); if (l) return [e, l]; } return []; }
+function ouvrirSignature(id) {
+  const [e, l] = trouverLigne(id); if (!l) return;
+  sigLigne = id; sigTraits = 0;
+  document.getElementById('sig-texte').innerHTML = `Je soussigné(e) <strong>${esc(l.juge_nom)}</strong> reconnais avoir reçu <strong>${euro(l.montant)} en espèces</strong> de l'ALSL pour ma prestation de juge (${CRENEAUX[l.creneau]}) lors de « ${esc(e.evenement)} » du ${fr(e.date_evenement)} à ${esc(e.lieu)}.`;
+  document.getElementById('sig-saisie').classList.remove('hidden'); document.getElementById('sig-partage').classList.add('hidden');
+  document.getElementById('sig-modale-titre').textContent = 'Remise de l\'enveloppe';
+  document.getElementById('modale-sig').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  preparerCanvas();
+}
+function fermerSignature() { document.getElementById('modale-sig').classList.add('hidden'); document.body.style.overflow = ''; sigLigne = null; recuPret = null; }
+function preparerCanvas() {
+  const c = document.getElementById('sig-canvas'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  c.width = r.width * dpr; c.height = r.height * dpr;
+  const ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13204a';
+  let dessine = false, last = null;
+  const pos = ev => { const b = c.getBoundingClientRect(); return [ev.clientX - b.left, ev.clientY - b.top]; };
+  c.onpointerdown = ev => { ev.preventDefault(); c.setPointerCapture(ev.pointerId); dessine = true; last = pos(ev); ctx.beginPath(); ctx.arc(last[0], last[1], 1.1, 0, 7); ctx.fill(); sigTraits++; };
+  c.onpointermove = ev => { if (!dessine) return; ev.preventDefault(); const p = pos(ev); ctx.beginPath(); ctx.moveTo(...last); ctx.lineTo(...p); ctx.stroke(); last = p; sigTraits++; };
+  c.onpointerup = c.onpointercancel = () => { dessine = false; };
+}
+function effacerSignature() { const c = document.getElementById('sig-canvas'); c.getContext('2d').clearRect(0, 0, c.width, c.height); sigTraits = 0; }
+async function validerSignature(papier) {
+  if (!sigLigne) return;
+  let url = null;
+  if (!papier) {
+    if (sigTraits < 15) return toast('La signature du juge est trop courte ou absente.', 'error');
+    const src = document.getElementById('sig-canvas'), out = document.createElement('canvas'), r = Math.min(1, 600 / src.width);
+    out.width = Math.round(src.width * r); out.height = Math.round(src.height * r);
+    out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+    url = out.toDataURL('image/png');
+  } else if (!confirm('Le juge a signé un reçu papier, que vous remettez à la trésorière ?')) return;
+  const btns = document.querySelectorAll('#modale-sig button'); btns.forEach(b => b.disabled = true);
+  const ok = await rpc('signer_reception_juge', { p_ligne: sigLigne, p_signature: url, p_papier: !!papier }, 'Remise enregistrée. Donnez l\'enveloppe au juge.');
+  btns.forEach(b => b.disabled = false);
+  if (!ok) return;
+  if (papier) return fermerSignature();
+  preparerPartage(sigLigne);
+}
+
+// ---------- Reçu image à envoyer au juge (SMS, WhatsApp, mail) ----------
+let recuPret = null;
+function chargerImage(src) {
+  return new Promise(ok => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+}
+function lignesTexte(ctx, texte, largeur) {
+  const mots = texte.split(' '), out = []; let l = '';
+  for (const m of mots) { const t = l ? l + ' ' + m : m; if (ctx.measureText(t).width > largeur && l) { out.push(l); l = m; } else l = t; }
+  if (l) out.push(l); return out;
+}
+async function dessinerRecu(e, l) {
+  const W = 1240, H = 1754, M = 100, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), bleu = '#1d2b4f', gris = '#666';
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  const [logo, sigP, tampon, sigJ] = await Promise.all([chargerImage('logo-alsl.jpg'), chargerImage(visuels.signature_presidente), chargerImage(visuels.tampon_alsl), chargerImage(l.signature)]);
+  const police = (taille, gras) => { x.font = `${gras ? '700' : '400'} ${taille}px Inter, Arial, sans-serif`; };
+  let y = M;
+  x.fillStyle = bleu; police(30, true); x.fillText('ALSL', M, y + 10);
+  police(24); ['Association Lambescaine de Sports et Loisirs', '6, boulevard de la République — 13410 LAMBESC', '04 42 92 72 77 · alsl13410@gmail.com']
+    .forEach((t, i) => x.fillText(t, M, y + 48 + i * 32));
+  if (logo) { const h = 150, w = logo.width * h / logo.height; x.drawImage(logo, W - M - w, y - 20, w, h); }
+  y += 170; x.fillRect(M, y, W - 2 * M, 5);
+  y += 80; police(42, true); x.textAlign = 'center'; x.fillText('REÇU DE PAIEMENT — PRESTATION DE JUGE', W / 2, y);
+  police(22); x.fillStyle = gris; x.fillText('Réf. ' + ej(e), W / 2, y + 36); x.textAlign = 'left';
+  y += 70;
+  const section = (titre, lignes) => {
+    y += 50; x.fillStyle = bleu; police(28, true); x.fillText(titre, M, y);
+    police(27); lignes.forEach(t => lignesTexte(x, t, W - 2 * M).forEach(s => { y += 40; x.fillText(s, M, y); }));
+  };
+  const date = l.signe_le ? l.signe_le.slice(0, 10) : auj();
+  section('1. Structure qui verse l\'indemnité', ['ALSL — Association Lambescaine de Sports et Loisirs']);
+  section('2. Identification du juge', [`Nom et prénom : ${l.juge_nom} — niveau ${l.niveau}`]);
+  section('3. Détails de la prestation', [`Événement : ${e.evenement}`, `Lieu : ${e.lieu}`, `Date : ${fr(e.date_evenement)} — ${CRENEAUX[l.creneau]}`]);
+  section('4. Modalités de paiement', [`Montant versé : ${euro(l.montant)}`, 'Mode de paiement : espèces', `Date de paiement : ${fr(date)}`]);
+  section('5. Attestation', ['Le présent document fait office de reçu et atteste que le montant indiqué ci-dessus a été intégralement versé au juge pour la prestation mentionnée.']);
+  section('6. Signatures', [`Fait à ${e.lieu}, le ${fr(date)}`]);
+  y += 30; const bw = (W - 2 * M) / 2, bh = 330;
+  x.strokeStyle = '#ccd'; x.lineWidth = 2; x.strokeRect(M, y, bw, bh); x.strokeRect(M + bw, y, bw, bh);
+  x.fillStyle = bleu; police(26, true); x.fillText('Pour l\'ALSL', M + 20, y + 42); x.fillText('Le juge', M + bw + 20, y + 42);
+  police(24); x.fillText('Élodie Alamo, présidente', M + 20, y + 78); x.fillText(l.juge_nom, M + bw + 20, y + 78);
+  if (sigP) { const h = 110, w = Math.min(260, sigP.width * h / sigP.height); x.drawImage(sigP, M + 20, y + 120, w, h); }
+  if (tampon) x.drawImage(tampon, M + bw - 190, y + 110, 170, 170);
+  if (sigJ) { const h = 140, w = Math.min(bw - 40, sigJ.width * h / sigJ.height); x.drawImage(sigJ, M + bw + 20, y + 100, w, h); }
+  police(19); x.fillStyle = gris;
+  const mention = l.signature ? `Signé électroniquement le ${new Date(l.signe_le).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : l.recu_papier ? 'Reçu papier signé, conservé par la trésorière' : '';
+  lignesTexte(x, mention, bw - 40).forEach((s, i) => x.fillText(s, M + bw + 20, y + bh - 40 + i * 24));
+  return new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
+}
+async function preparerPartage(id) {
+  const [e, l] = trouverLigne(id); if (!l) return;
+  const zone = document.getElementById('sig-partage');
+  document.getElementById('sig-saisie').classList.add('hidden'); zone.classList.remove('hidden');
+  document.getElementById('sig-modale-titre').textContent = 'Reçu du juge';
+  document.getElementById('sig-partage-texte').innerHTML = `${l.signe_le ? '✓ Remise enregistrée. Donnez l\'enveloppe à <strong>' + esc(l.juge_nom) + '</strong>.<br>' : ''}Préparation du reçu…`;
+  const btn = document.getElementById('btn-partager'); btn.disabled = true;
+  document.getElementById('modale-sig').classList.remove('hidden'); document.body.style.overflow = 'hidden';
+  let blob;
+  try { blob = await dessinerRecu(e, l); if (!blob) throw new Error('image vide'); }
+  catch (err) { document.getElementById('sig-partage-texte').textContent = 'Reçu impossible à préparer sur cet appareil (' + err.message + '). Utilisez le bouton « Reçus » de l\'état.'; return; }
+  const nom = `Recu_ALSL_${ej(e)}_${l.juge_nom.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-')}.jpg`;
+  recuPret = { fichier: new File([blob], nom, { type: 'image/jpeg' }), texte: `Bonjour ${l.juge_nom.split(' ')[0]}, voici votre reçu de paiement ALSL (${euro(l.montant)}, ${e.evenement} du ${fr(e.date_evenement)}). Merci pour votre présence !` };
+  document.getElementById('sig-apercu').src = URL.createObjectURL(blob);
+  document.getElementById('sig-partage-texte').innerHTML = `${l.signe_le ? '✓ Remise enregistrée. Donnez l\'enveloppe à <strong>' + esc(l.juge_nom) + '</strong>.<br>' : ''}Envoyez-lui son reçu :`;
+  btn.disabled = false;
+}
+async function partagerRecu() {
+  if (!recuPret) return;
+  const { fichier, texte } = recuPret;
+  if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
+    try { await navigator.share({ files: [fichier], title: 'Reçu ALSL', text: texte }); toast('Reçu envoyé.'); }
+    catch (err) { if (err.name !== 'AbortError') toast('Partage impossible : ' + err.message, 'error'); }
+  } else {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(fichier); a.download = fichier.name; a.click();
+    toast('Partage non disponible sur cet appareil : le reçu a été téléchargé.');
+  }
+}
+function envoyerRecu(id) {
+  sigLigne = null;
+  preparerPartage(id);
+}
+
+
+
+// ---------- Reçus imprimables ----------
+async function chargerVisuels() {
+  const { data } = await sb.from('visuels_officiels').select('cle, data_url');
+  visuels = Object.fromEntries((data || []).map(v => [v.cle, v.data_url]));
+  ['signature', 'tampon'].forEach(k => {
+    const url = visuels[k === 'signature' ? 'signature_presidente' : 'tampon_alsl'];
+    const ap = document.getElementById('ap-' + k);
+    if (ap) ap.innerHTML = url ? `<img src="${url}" alt="" style="max-height:90px;">` : '<span class="muted">Pas encore enregistré.</span>';
+  });
+}
+function imprimerRecus(id) {
+  const e = etats.find(x => x.id === id), m = montants(e);
+  let mode = e.mode_paiement || 'especes', dateEtat = e.date_paiement;
+  if (e.statut === 'validee') {
+    mode = (document.getElementById('mode-' + id) || {}).value || 'especes';
+    dateEtat = mode === 'especes' ? '' : ((document.getElementById('date-' + id) || {}).value || auj());
+  }
+  const sig = visuels.signature_presidente, tampon = visuels.tampon_alsl;
+  if (!sig || !tampon) toast('Signature ou tampon pas encore enregistrés (onglet Paramètres, présidente) : les reçus sortent sans.', 'error');
+  const logo = new URL('logo-alsl.jpg', location.href).href;
+  const case_ = k => (k === mode ? '☒' : '☐');
+  const pages = m.recus.map(l => { const date = l.signe_le ? l.signe_le.slice(0, 10) : dateEtat; return `
+  <div class="page">
+    <table class="entete"><tr>
+      <td><strong>ALSL</strong><br>Association Lambescaine de Sports et Loisirs<br>6, boulevard de la République<br>13410 LAMBESC<br>04 42 92 72 77 · alsl13410@gmail.com</td>
+      <td style="text-align:right;"><img src="${logo}" alt="Logo ALSL" style="height:95px;"></td>
+    </tr></table>
+    <h1>Reçu de paiement — prestation de juge</h1>
+    <p class="ref">Réf. ${ej(e)}</p>
+    <h2>1. Structure qui verse l'indemnité</h2>
+    <p>ALSL — Association Lambescaine de Sports et Loisirs${e.organisateur && e.organisateur.toUpperCase() !== 'ALSL' ? `<br><span class="petit">Compétition organisée par : ${esc(e.organisateur)}</span>` : ''}</p>
+    <h2>2. Identification du juge</h2>
+    <p>Nom et prénom : <strong>${esc(l.juge_nom)}</strong> — niveau ${l.niveau}</p>
+    <h2>3. Détails de la prestation</h2>
+    <p>Événement : <strong>${esc(e.evenement)}</strong><br>Lieu : ${esc(e.lieu)}<br>Date de la prestation : ${fr(e.date_evenement)} — ${CRENEAUX[l.creneau]}</p>
+    <h2>4. Modalités de paiement</h2>
+    <p>Montant versé : <strong>${euro(l.montant)}</strong><br>
+      Mode de paiement : ${case_('virement')} Virement bancaire &nbsp; ${case_('cheque')} Chèque${mode === 'cheque' && e.reference_paiement ? ' n° ' + esc(e.reference_paiement) : ''} &nbsp; ${case_('especes')} Espèces<br>
+      Date de paiement : ${date ? fr(date) : '…………………'}</p>
+    <h2>5. Attestation</h2>
+    <p>Le présent document fait office de reçu et atteste que le montant indiqué ci-dessus a été intégralement versé au juge pour la prestation mentionnée.</p>
+    <h2>6. Signatures</h2>
+    <p>Fait à : ${esc(e.lieu)} &nbsp;&nbsp;&nbsp; Le : ${date ? fr(date) : '…………………'}</p>
+    <table class="sign"><tr>
+      <td><strong>Pour l'ALSL</strong><br>Élodie Alamo, présidente<br>
+        <div class="visuels">${sig ? `<img src="${sig}" alt="Signature" style="height:62px;">` : ''}${tampon ? `<img src="${tampon}" alt="Tampon ALSL" style="height:92px;">` : ''}</div></td>
+      <td><strong>Le juge</strong><br>${esc(l.juge_nom)}<br><span class="petit">Signature :</span>
+        ${l.signature ? `<div class="visuels"><img src="${l.signature}" alt="Signature du juge" style="height:70px;"></div><span class="petit">Signé électroniquement le ${new Date(l.signe_le).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}, remise par ${esc(l.signe_par_nom || '')}</span>` : l.recu_papier ? '<br><span class="petit">Reçu papier signé, conservé par la trésorière.</span>' : ''}</td>
+    </tr></table>
+  </div>`; }).join('');
+  const w = window.open('', '_blank');
+  if (!w) return toast('Autorisez les fenêtres pop-up pour imprimer les reçus.', 'error');
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Reçus ${ej(e)} — ${esc(e.evenement)}</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    body { font-family: Inter, Arial, sans-serif; font-size: 11pt; color: #1d2b4f; margin: 0; }
+    .page { page-break-after: always; max-width: 178mm; margin: 0 auto; padding: 4mm 0; }
+    .page:last-child { page-break-after: auto; }
+    .entete { width: 100%; border-bottom: 3px solid #1d2b4f; padding-bottom: 4mm; margin-bottom: 6mm; font-size: 10pt; }
+    h1 { font-size: 15pt; text-align: center; margin: 0 0 1mm; text-transform: uppercase; letter-spacing: .02em; }
+    .ref { text-align: center; color: #777; font-size: 9pt; margin: 0 0 5mm; }
+    h2 { font-size: 11pt; margin: 5mm 0 1.5mm; color: #1d2b4f; }
+    p { margin: 0; line-height: 1.55; }
+    .petit { font-size: 9pt; color: #555; }
+    .sign { width: 100%; margin-top: 4mm; border-collapse: collapse; }
+    .sign td { width: 50%; vertical-align: top; border: 1px solid #ccd; padding: 3mm; height: 42mm; }
+    .visuels { display: flex; align-items: center; gap: 4mm; margin-top: 2mm; }
+    .barre-impr { position: fixed; top: 0; left: 0; right: 0; background: #1d2b4f; color: #fff; padding: 8px 14px; font-size: 14px; }
+    .barre-impr button { margin-left: 10px; }
+    @media print { .barre-impr { display: none; } }
+    @media screen { body { padding-top: 46px; background: #eef0f5; } .page { background: #fff; padding: 12mm; margin: 10px auto; box-shadow: 0 1px 4px rgba(0,0,0,.15); } }
+  </style></head><body>
+  <div class="barre-impr">${m.recus.length} reçu(s) — à imprimer et faire signer par chaque juge<button onclick="print()">Imprimer / enregistrer en PDF</button></div>
+  ${pages}</body></html>`);
+  w.document.close();
+}
+
+// ---------- Paramètres : signature et tampon ----------
+function compresser(fichier, largeurMax) {
+  return new Promise((ok, ko) => {
+    const img = new Image();
+    img.onload = () => {
+      const r = Math.min(1, largeurMax / img.width), c = document.createElement('canvas');
+      c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      let url = c.toDataURL('image/webp', 0.85);
+      if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/png');
+      URL.revokeObjectURL(img.src); ok(url);
+    };
+    img.onerror = () => ko(new Error('image illisible'));
+    img.src = URL.createObjectURL(fichier);
+  });
+}
+[['up-signature', 'signature_presidente', 400], ['up-tampon', 'tampon_alsl', 320]].forEach(([inp, cle, l]) => {
+  document.getElementById(inp).onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    try {
+      const url = await compresser(f, l);
+      const { error } = await sb.from('visuels_officiels').upsert({ cle, data_url: url, maj_le: new Date().toISOString() });
+      if (error) throw new Error(error.message);
+      toast('Enregistré.'); chargerVisuels();
+    } catch (err) { toast('Erreur : ' + err.message, 'error'); }
+  };
+});
+
+// ---------- Cumul annuel ----------
+function anneesDispo() {
+  const ans = new Set([new Date().getFullYear()]);
+  etats.forEach(e => { if (e.date_paiement) ans.add(+e.date_paiement.slice(0, 4)); });
+  return [...ans].sort((a, b) => b - a);
+}
+function calculCumul(annee) {
+  const parJuge = {};
+  etats.filter(e => e.statut === 'payee' && e.date_paiement && +e.date_paiement.slice(0, 4) === annee).forEach(e => {
+    lignesTriees(e).filter(l => !l.annulee).forEach(l => {
+      const k = l.juge_id || l.juge_nom;
+      const p = parJuge[k] = parJuge[k] || { nom: l.juge_nom, salarie: l.salarie_club, nb: 0, total: 0, especes: 0, details: [] };
+      p.nb++; p.total += Number(l.montant); if (e.mode_paiement === 'especes' && !l.salarie_club) p.especes += Number(l.montant);
+      p.details.push(`${fr(e.date_evenement)} ${e.evenement} (${euro(l.montant)})`);
+    });
+  });
+  return Object.values(parJuge).sort((a, b) => b.total - a.total);
+}
+function rendreCumul() {
+  const sel = document.getElementById('cumul-annee');
+  if (!sel.options.length) { sel.innerHTML = anneesDispo().map(a => `<option>${a}</option>`).join(''); sel.onchange = rendreCumul; }
+  const annee = +sel.value;
+  const pass = PASS[annee] || PASS[Math.max(...Object.keys(PASS).map(Number))];
+  const seuil = Math.round(pass * 0.145 * 100) / 100;
+  document.getElementById('cumul-info').innerHTML = `Seuil d'exonération ${annee} : <strong>${euro(seuil)}</strong> par juge et par an (14,5 % du plafond de la Sécurité sociale${PASS[annee] ? '' : ' — valeur ' + annee + ' à mettre à jour'}). Sous ce seuil, pas de cotisations ; les sommes sont à déclarer à l'Urssaf sous le code CTP 024 (à transmettre à la comptable). Le cumul ci-dessous ne compte que ce que l'ALSL a versé : un juge payé aussi par d'autres organisateurs peut dépasser le seuil sans que cela apparaisse ici. Paiements des états marqués payés, par date de paiement.`;
+  const lignes = calculCumul(annee);
+  document.getElementById('liste-cumul').innerHTML = !lignes.length ? '<div class="card-body muted">Aucun paiement sur cette année.</div>' : lignes.map(p => {
+    const pct = Math.min(100, p.total / seuil * 100);
+    const cls = p.total > seuil ? 'depasse' : pct >= 80 ? 'alerte' : '';
+    return `<div class="list-item"><div style="flex:1;min-width:0;">
+      <div><strong>${esc(p.nom)}</strong> ${p.salarie ? '<span class="badge badge-gold">Salarié(e) — via la paie</span>' : ''} <span class="muted">· ${p.nb} prestation(s)</span></div>
+      ${p.salarie ? '' : `<div class="barre ${cls}"><div style="width:${pct}%"></div></div>
+      <div class="muted">${Math.round(pct)} % du seuil${p.total > seuil ? ' — <strong style="color:#c0392b;">seuil dépassé : prévenir la comptable</strong>' : pct >= 80 ? ' — proche du seuil' : ''}</div>`}
+    </div><strong style="white-space:nowrap;">${euro(p.total)}</strong></div>`;
+  }).join('');
+}
+function chargerScript(src) {
+  return new Promise((ok, ko) => { if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('chargement impossible')); document.head.appendChild(s); });
+}
+async function exporterCumul() {
+  try {
+    await chargerScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+    const annee = +document.getElementById('cumul-annee').value;
+    const pass = PASS[annee] || PASS[Math.max(...Object.keys(PASS).map(Number))], seuil = Math.round(pass * 0.145 * 100) / 100;
+    const rows = calculCumul(annee).map(p => ({ 'Juge': p.nom, 'Salarié(e) ALSL': p.salarie ? 'oui (paie)' : 'non', 'Prestations': p.nb,
+      'Total versé (€)': Math.round(p.total * 100) / 100, 'Dont espèces (€)': Math.round(p.especes * 100) / 100,
+      'Seuil (€)': seuil, 'Dépassement': p.salarie ? '' : (p.total > seuil ? 'OUI' : 'non'), 'Détail': p.details.join(' ; ') }));
+    if (!rows.length) return toast('Aucun paiement sur cette année.', 'error');
+    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [24, 16, 11, 14, 14, 10, 12, 80].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, `Juges ${annee}`);
+    XLSX.writeFile(wb, `ALSL_Juges_cumul_${annee}.xlsx`);
+  } catch (err) { toast('Export impossible : ' + err.message, 'error'); }
+}
+</script>
+</body>
+</html>
