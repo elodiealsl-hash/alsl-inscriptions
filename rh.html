@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1a2e5a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ALSL RH">
+<title>ALSL — Espace salarié</title>
+<link rel="manifest" href="rh-manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icone-rh-192.png">
+<link rel="apple-touch-icon" href="icone-rh-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="rh-app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<div class="app">
+
+  <!-- ===== Connexion ===== -->
+  <section id="ecran-connexion">
+    <header class="head">
+      <div class="head-id">
+        <img src="logo-alsl.jpg" alt="Logo ALSL">
+        <div><h1>Espace salarié</h1><div class="sub">ALSL — congés, récupérations, formations</div></div>
+      </div>
+    </header>
+    <div class="login">
+      <div class="panel">
+        <p>Saisissez votre adresse e-mail. Vous recevrez un lien de connexion, sans mot de passe à retenir.</p>
+        <label class="label">Adresse e-mail
+          <input type="email" class="field" id="email" placeholder="prenom.nom@exemple.fr" autocomplete="email" inputmode="email">
+        </label>
+        <button type="button" class="cta navy" id="btn-lien">Recevoir mon lien de connexion</button>
+      </div>
+      <p class="note">Astuce : une fois connecté(e), ajoutez cette page à l'écran d'accueil de votre téléphone pour l'ouvrir comme une application.</p>
+    </div>
+  </section>
+
+  <!-- ===== Adresse non reconnue ===== -->
+  <section class="hidden" id="ecran-inconnu">
+    <header class="head">
+      <div class="head-row">
+        <div class="head-id"><img src="logo-alsl.jpg" alt="Logo ALSL"><div><h1>Espace salarié</h1></div></div>
+        <button type="button" class="icon-btn" aria-label="Se déconnecter" onclick="deconnexion()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+      </div>
+    </header>
+    <div class="login"><div class="warn" id="inconnu-txt">Cette adresse e-mail n'est pas enregistrée comme salarié de l'ALSL. Contactez la présidente pour qu'elle vous ajoute.</div></div>
+  </section>
+
+  <!-- ===== Onglet 1 : Demander ===== -->
+  <section class="hidden" id="vue-demander">
+    <header class="head big">
+      <div class="head-row">
+        <div class="head-id">
+          <img src="logo-alsl.jpg" alt="Logo ALSL">
+          <div><h1 id="bonjour">Bonjour</h1><div class="sub">Espace salarié ALSL</div></div>
+        </div>
+        <button type="button" class="icon-btn" aria-label="Se déconnecter" onclick="deconnexion()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+      </div>
+    </header>
+
+    <section class="solde" aria-label="Solde de congés">
+      <div class="ring" id="ring"><div class="ring-in"><span class="ring-num" id="solde">—</span><span class="ring-u">jours</span></div></div>
+      <div class="solde-txt">
+        <span class="solde-titre" id="solde-titre">Congés restants</span>
+        <span class="solde-info" id="solde-info"></span>
+        <span class="solde-attente" id="solde-attente"></span>
+      </div>
+    </section>
+
+    <form class="main" id="form-demande" novalidate>
+      <h2>Nouvelle demande</h2>
+      <div class="chips" role="group" aria-label="Type de demande" id="chips-type"></div>
+
+      <div class="info hidden" id="info-arret">
+        <div class="info-row">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span><strong>Volet 3 (employeur)</strong> : à joindre ici. Les <strong>volets 1 et 2</strong> sont à envoyer à votre CPAM sous 48 h, sauf si votre médecin a fait l'envoi en ligne. N'indiquez jamais le motif médical.</span>
+        </div>
+        <label class="drop" id="drop-volet3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a5fa8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span id="volet3-nom">Photo ou PDF du volet 3</span>
+          <input type="file" id="volet3" accept="image/*,application/pdf">
+        </label>
+        <span class="note">Vous pourrez aussi l'ajouter plus tard depuis « Mes demandes ». 10 Mo maximum.</span>
+      </div>
+
+      <div class="grid2">
+        <label class="label">Du<input type="date" class="field" id="date_debut" required></label>
+        <label class="label">Au (inclus)<input type="date" class="field" id="date_fin" required></label>
+      </div>
+
+      <div class="box">
+        <div>
+          <div class="box-t" id="nbj-texte">Choisissez vos dates</div>
+          <div class="box-s">Jours ouvrables (lundi → samedi, hors fériés)</div>
+        </div>
+        <button type="button" class="pill-btn" id="btn-modifier">Modifier</button>
+        <input type="number" class="field nbj hidden" id="nb_jours" min="0.5" step="0.5" aria-label="Nombre de jours">
+      </div>
+
+      <div id="alerte-sensible"></div>
+
+      <label class="label">Commentaire (facultatif)
+        <textarea class="field" id="commentaire" rows="2" maxlength="500" placeholder="Remplacement prévu, intitulé de la formation…"></textarea>
+      </label>
+
+      <button type="submit" class="cta" id="btn-envoyer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Envoyer la demande
+      </button>
+    </form>
+  </section>
+
+  <!-- ===== Onglet 2 : Mes demandes ===== -->
+  <section class="hidden" id="vue-demandes">
+    <header class="head">
+      <h1>Mes demandes</h1>
+      <div class="filters" role="group" aria-label="Filtrer les demandes" id="filtres"></div>
+    </header>
+    <div class="main" id="mes-demandes"></div>
+  </section>
+
+  <!-- ===== Onglet 3 : Planning ===== -->
+  <section class="hidden" id="vue-planning">
+    <header class="head">
+      <div class="head-row">
+        <div><h1>Planning</h1><div class="sub">Absences validées de l'équipe</div></div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="icon-btn" aria-label="Mois précédent" onclick="changerMois(-1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <button type="button" class="icon-btn" aria-label="Mois suivant" onclick="changerMois(1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
+        </div>
+      </div>
+    </header>
+    <div class="main">
+      <section class="cal" aria-labelledby="cal-titre">
+        <div class="head-row" style="gap:8px;">
+          <span class="cal-titre" id="cal-titre"></span>
+          <button type="button" class="pill-btn" onclick="changerMois(0)">Aujourd'hui</button>
+        </div>
+        <div class="cal-grid" aria-hidden="true"><span class="cal-dow">L</span><span class="cal-dow">M</span><span class="cal-dow">M</span><span class="cal-dow">J</span><span class="cal-dow">V</span><span class="cal-dow">S</span><span class="cal-dow">D</span></div>
+        <div class="cal-grid" id="cal-jours"></div>
+        <div class="legende">
+          <span><span class="dot"></span>Absence</span>
+          <span><span class="dot moi"></span>Vous</span>
+          <span><span style="width:12px;height:12px;border-radius:4px;background:#fef5de;border:1px solid #e8a820;"></span>Gala / compétition</span>
+        </div>
+      </section>
+      <h2 class="sec-titre">Ce mois-ci</h2>
+      <div id="liste-mois" style="display:flex;flex-direction:column;gap:10px;"></div>
+      <p class="note">Seules les absences validées apparaissent. Le motif n'est jamais affiché.</p>
+    </div>
+  </section>
+
+  <!-- ===== Barre de navigation ===== -->
+  <nav class="tabbar hidden" id="tabbar" aria-label="Navigation principale">
+    <div class="tabbar-in">
+      <button type="button" class="tab" data-vue="demander" aria-current="page">
+        <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Demander
+      </button>
+      <button type="button" class="tab" data-vue="demandes">
+        <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg></span>Mes demandes
+      </button>
+      <button type="button" class="tab" data-vue="planning">
+        <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Planning
+      </button>
+    </div>
+  </nav>
+</div>
+
+<script src="rh-commun.js"></script>
+<script>
+let salarie = null, demandes = [], periodes = [], typeChoisi = 'conges', filtre = 'toutes';
+
+// ---------- Icônes et couleurs par type ----------
+const ICONES = {
+  conges: { bg: '#fef5de', c: '#8a5e00', svg: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>' },
+  recuperation: { bg: '#efedff', c: '#5b45c9', svg: '<polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/>' },
+  formation: { bg: '#e7f1fb', c: '#1a5fa8', svg: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>' },
+  absence: { bg: '#eef0f4', c: '#333d5c', svg: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
+  arret: { bg: '#fbebeb', c: '#b3261e', svg: '<rect x="3" y="3" width="18" height="18" rx="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>' }
+};
+const STATUTS = {
+  en_attente: ['st-attente', 'En attente'], validee: ['st-validee', 'Validée'],
+  refusee: ['st-refusee', 'Refusée'], annulee: ['st-annulee', 'Annulée']
+};
+const ico = (t, taille = 22) => { const i = ICONES[t] || ICONES.absence;
+  return `<svg width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none" stroke="${i.c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${i.svg}</svg>`; };
+const nbFr = n => Number(n).toLocaleString('fr-FR');
+const jourTxt = n => `${nbFr(n)} jour${Number(n) > 1 ? 's' : ''}`;
+function periodeCourte(d1, d2) {
+  const f = (d, opt) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', opt);
+  if (d1 === d2) return f(d1, { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${f(d1, { day: 'numeric', month: 'short' })} → ${f(d2, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
+// ---------- Navigation entre onglets ----------
+function montrer(vue) {
+  ['demander', 'demandes', 'planning'].forEach(v =>
+    document.getElementById('vue-' + v).classList.toggle('hidden', v !== vue));
+  document.querySelectorAll('.tab').forEach(t => {
+    if (t.dataset.vue === vue) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+  });
+  if (vue === 'planning') rendreEquipe();
+  window.scrollTo(0, 0);
+  try { history.replaceState(null, '', '#' + vue); } catch (e) {}
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => montrer(t.dataset.vue)));
+
+// ---------- Types de demande (puces) ----------
+function rendreTypes() {
+  const types = Object.entries(TYPES_RH).filter(([v]) => !(salarie && salarie.type_contrat === 'intermittent' && v === 'conges'));
+  if (!types.some(([v]) => v === typeChoisi)) typeChoisi = types[0][0];
+  document.getElementById('chips-type').innerHTML = types.map(([v, l]) =>
+    `<button type="button" class="chip" aria-pressed="${v === typeChoisi}" onclick="choisirType('${v}')">${esc(l)}</button>`).join('');
+  document.getElementById('info-arret').classList.toggle('hidden', typeChoisi !== 'arret');
+}
+function choisirType(v) { typeChoisi = v; rendreTypes(); }
+
+// ---------- Connexion ----------
+document.getElementById('btn-lien').onclick = async () => {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return toast('Saisissez votre adresse e-mail.', 'error');
+  const btn = document.getElementById('btn-lien');
+  btn.disabled = true;
+  if (!(await envoyerLienConnexion(email))) btn.disabled = false;
+};
+
+let demarre = false;
+async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session || demarre) return;
+  demarre = true;
+  document.getElementById('ecran-connexion').classList.add('hidden');
+
+  const { data: fiches } = await sb.from('salaries').select('*').eq('actif', true).ilike('email', session.user.email);
+  salarie = (fiches || [])[0];
+  if (!salarie) {
+    document.getElementById('inconnu-txt').textContent =
+      `L'adresse ${session.user.email} n'est pas enregistrée comme salarié de l'ALSL. Contactez la présidente pour qu'elle vous ajoute.`;
+    document.getElementById('ecran-inconnu').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('bonjour').textContent = `Bonjour ${salarie.prenom}`;
+  document.getElementById('tabbar').classList.remove('hidden');
+  const { data: p } = await sb.from('periodes_sensibles').select('*').order('date_debut');
+  periodes = p || [];
+  rendreTypes();
+  await charger();
+  const h = location.hash.slice(1);
+  montrer(['demander', 'demandes', 'planning'].includes(h) ? h : 'demander');
+}
+
+// ---------- Solde + Mes demandes ----------
+async function charger() {
+  const { data, error } = await sb.from('demandes_rh').select('*')
+    .eq('salarie_id', salarie.id).order('date_debut', { ascending: false });
+  if (error) return toast('Erreur de chargement : ' + error.message, 'error');
+  demandes = data || [];
+
+  const ring = document.getElementById('ring');
+  const attente = demandes.filter(d => d.statut === 'en_attente');
+  const attenteConges = attente.filter(d => d.type === 'conges').reduce((s, d) => s + Number(d.nb_jours), 0);
+  if (salarie.type_contrat === 'intermittent') {
+    document.getElementById('solde').textContent = '0';
+    document.getElementById('solde-titre').textContent = 'Contrat intermittent';
+    document.getElementById('solde-info').textContent = 'Congés payés réglés chaque mois sur votre bulletin. Absence sur une période travaillée : « Absence exceptionnelle » (rattrapée si possible, sinon non payée).';
+    ring.style.background = '#eef0f4';
+  } else {
+    const reste = soldeRestant(salarie, demandes), base = Math.max(Number(salarie.solde_conges_jours) || 0, reste, 1);
+    const pct = Math.max(0, Math.min(100, Math.round(reste / base * 100)));
+    document.getElementById('solde').textContent = nbFr(reste);
+    ring.style.background = `conic-gradient(#e8a820 0 ${pct}%, #eef0f4 ${pct}% 100%)`;
+    document.getElementById('solde-info').textContent = salarie.solde_maj_le
+      ? `Solde au ${fmtDate(salarie.solde_maj_le)}, moins les congés validés depuis`
+      : 'Solde pas encore renseigné par la présidente';
+  }
+  document.getElementById('solde-attente').textContent = attente.length
+    ? `${attente.length} demande${attente.length > 1 ? 's' : ''} en attente${attenteConges ? ` · ${nbFr(attenteConges)} j de congés non déduits` : ''}`
+    : '';
+  rendreDemandes();
+}
+
+function rendreDemandes() {
+  const nbAtt = demandes.filter(d => d.statut === 'en_attente').length;
+  const filtres = [['toutes', `Toutes · ${demandes.length}`], ['en_attente', `En attente · ${nbAtt}`], ['traitees', 'Traitées']];
+  document.getElementById('filtres').innerHTML = filtres.map(([v, l]) =>
+    `<button type="button" class="filter" aria-pressed="${v === filtre}" onclick="filtrer('${v}')">${l}</button>`).join('');
+  const liste = demandes.filter(d => filtre === 'toutes' || (filtre === 'en_attente' ? d.statut === 'en_attente' : d.statut !== 'en_attente'));
+  const el = document.getElementById('mes-demandes');
+  if (!liste.length) { el.innerHTML = `<div class="empty">${demandes.length ? 'Aucune demande dans ce filtre.' : 'Aucune demande pour l\'instant.'}</div>`; return; }
+  el.innerHTML = liste.map(d => {
+    const [cls, lib] = STATUTS[d.statut] || ['st-annulee', d.statut];
+    const i = ICONES[d.type] || ICONES.absence;
+    const actions = [];
+    if (d.type === 'arret' && d.justificatif_path) actions.push('<span class="tag">Volet 3 joint</span>');
+    if (d.type === 'arret' && !d.justificatif_path && d.statut !== 'annulee')
+      actions.push(`<label class="mini blue">Ajouter le volet 3<input type="file" accept="image/*,application/pdf" onchange="ajouterVolet3('${d.id}', this)"></label>`);
+    if (d.statut === 'en_attente') actions.push(`<button type="button" class="mini danger" onclick="annuler('${d.id}')">Annuler</button>`);
+    return `
+    <article class="card${d.statut === 'annulee' ? ' off' : ''}">
+      <div class="card-ico" style="background:${i.bg}">${ico(d.type)}</div>
+      <div class="card-body">
+        <div class="card-top"><span class="card-t">${esc(TYPES_RH[d.type] || d.type)}</span><span class="statut ${cls}">${lib}</span></div>
+        <span class="card-s">${periodeCourte(d.date_debut, d.date_fin)} · ${jourTxt(d.nb_jours)}</span>
+        ${d.commentaire ? `<span class="card-s">${esc(d.commentaire)}</span>` : ''}
+        ${d.reponse ? `<span class="card-rep">Réponse : « ${esc(d.reponse)} »</span>` : ''}
+        <div class="card-foot"><span class="card-date">Envoyée le ${fmtDate(d.created_at.slice(0, 10))}</span><span style="display:flex;gap:6px;flex-wrap:wrap;">${actions.join('')}</span></div>
+      </div>
+    </article>`;
+  }).join('');
+}
+function filtrer(v) { filtre = v; rendreDemandes(); }
+
+// ---------- Formulaire ----------
+const nbInput = document.getElementById('nb_jours');
+function majCalcul() {
+  const d1 = document.getElementById('date_debut').value, d2 = document.getElementById('date_fin').value;
+  if (d1 && (!d2 || d2 < d1)) document.getElementById('date_fin').value = d1;
+  const fin = document.getElementById('date_fin').value;
+  if (d1 && fin) nbInput.value = joursOuvrables(d1, fin) || 0.5;
+  majTexteJours();
+  const conflits = periodes.filter(p => d1 && fin && chevauche(d1, fin, p.date_debut, p.date_fin));
+  document.getElementById('alerte-sensible').innerHTML = conflits.length
+    ? `<div class="warn"><strong>Période sensible</strong> : ${conflits.map(p => `${esc(p.libelle)} (${fmtPeriode(p.date_debut, p.date_fin)})`).join(', ')}. La demande pourra être refusée.</div>`
+    : '';
+}
+function majTexteJours() {
+  document.getElementById('nbj-texte').textContent = nbInput.value ? jourTxt(nbInput.value) : 'Choisissez vos dates';
+}
+['date_debut', 'date_fin'].forEach(id => document.getElementById(id).addEventListener('change', majCalcul));
+nbInput.addEventListener('input', majTexteJours);
+document.getElementById('btn-modifier').onclick = () => {
+  document.getElementById('btn-modifier').classList.add('hidden');
+  nbInput.classList.remove('hidden');
+  nbInput.focus();
+};
+document.getElementById('volet3').addEventListener('change', e => {
+  const f = e.target.files[0];
+  document.getElementById('volet3-nom').textContent = f ? f.name : 'Photo ou PDF du volet 3';
+});
+
+function reinitForm() {
+  document.getElementById('form-demande').reset();
+  document.getElementById('alerte-sensible').innerHTML = '';
+  document.getElementById('volet3-nom').textContent = 'Photo ou PDF du volet 3';
+  nbInput.classList.add('hidden');
+  document.getElementById('btn-modifier').classList.remove('hidden');
+  majTexteJours();
+}
+
+document.getElementById('form-demande').addEventListener('submit', async e => {
+  e.preventDefault();
+  const d1 = document.getElementById('date_debut').value, d2 = document.getElementById('date_fin').value;
+  const nb = Number(nbInput.value);
+  if (!d1 || !d2) return toast('Choisissez les dates de début et de fin.', 'error');
+  if (!(nb > 0)) return toast('Indiquez un nombre de jours.', 'error');
+  const btn = document.getElementById('btn-envoyer');
+  btn.disabled = true;
+  let justificatif_path = null;
+  const fichier = document.getElementById('volet3').files[0];
+  if (typeChoisi === 'arret' && fichier) {
+    justificatif_path = await envoyerVolet3(fichier);
+    if (!justificatif_path) { btn.disabled = false; return; }
+  }
+  const { error } = await sb.from('demandes_rh').insert({
+    salarie_id: salarie.id, type: typeChoisi, date_debut: d1, date_fin: d2, nb_jours: nb,
+    commentaire: document.getElementById('commentaire').value.trim() || null, justificatif_path
+  });
+  btn.disabled = false;
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Demande envoyée à la présidente.');
+  reinitForm();
+  filtre = 'toutes';
+  await charger();
+  montrer('demandes');
+});
+
+// Dépôt du volet 3 dans le dossier privé du salarié (lisible seulement par la présidente et la
+// vice-présidente, et par la trésorière une fois l'arrêt pris en compte)
+async function envoyerVolet3(fichier) {
+  if (fichier.size > 10 * 1024 * 1024) { toast('Fichier trop lourd (10 Mo maximum).', 'error'); return null; }
+  const ext = (fichier.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const chemin = `${salarie.id}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb.storage.from('justificatifs-rh').upload(chemin, fichier, { contentType: fichier.type || undefined, upsert: false });
+  if (error) { toast('Envoi du justificatif impossible : ' + error.message, 'error'); return null; }
+  return chemin;
+}
+async function ajouterVolet3(id, input) {
+  const fichier = input.files[0];
+  if (!fichier) return;
+  const chemin = await envoyerVolet3(fichier);
+  if (!chemin) return;
+  const { error } = await sb.rpc('ajouter_justificatif_rh', { p_id: id, p_path: chemin });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Volet 3 envoyé à la présidente.');
+  charger();
+}
+async function annuler(id) {
+  if (!confirm('Annuler cette demande ?')) return;
+  const { error } = await sb.rpc('annuler_demande_rh', { p_id: id });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Demande annulée.');
+  charger();
+}
+
+// ---------- Planning de l'équipe (absences validées, sans motif) ----------
+let mois = new Date();
+function changerMois(n) {
+  mois = n === 0 ? new Date() : new Date(mois.getFullYear(), mois.getMonth() + n, 1);
+  rendreEquipe();
+}
+async function rendreEquipe() {
+  const y = mois.getFullYear(), m = mois.getMonth(), nbJ = new Date(y, m + 1, 0).getDate();
+  const iso = j => `${y}-${String(m + 1).padStart(2, '0')}-${String(j).padStart(2, '0')}`;
+  document.getElementById('cal-titre').textContent = new Date(y, m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const { data, error } = await sb.rpc('planning_equipe', { p_debut: iso(1), p_fin: iso(nbJ) });
+  const liste = document.getElementById('liste-mois');
+  if (error) { liste.innerHTML = `<div class="empty">Planning indisponible : ${esc(error.message)}</div>`; return; }
+  const abs = data || [];
+  const moi = `${salarie.prenom} ${(salarie.nom || '').charAt(0)}.`;
+  const feries = joursFeries(y), auj = new Date().toISOString().slice(0, 10);
+
+  // Grille du mois (semaine commençant le lundi)
+  const decalage = (new Date(y, m, 1).getDay() + 6) % 7;
+  let h = '<span></span>'.repeat(decalage);
+  for (let j = 1; j <= nbJ; j++) {
+    const d = iso(j), dow = new Date(d + 'T12:00:00').getDay();
+    const sens = periodes.some(p => d >= p.date_debut && d <= p.date_fin);
+    const qui = [...new Set(abs.filter(r => d >= r.date_debut && d <= r.date_fin).map(r => r.salarie))];
+    const cls = ['jour', sens ? 'sens' : (dow === 0 || feries.has(d) ? 'off' : ''), d === auj ? 'today' : ''].join(' ');
+    const points = qui.slice(0, 3).map(n => `<span class="dot${n === moi ? ' moi' : ''}"></span>`).join('');
+    h += `<div class="${cls}"><span>${j}</span><span class="dots">${points}</span></div>`;
+  }
+  document.getElementById('cal-jours').innerHTML = h;
+
+  // Liste : périodes sensibles puis absences par personne
+  const evts = periodes.filter(p => chevauche(iso(1), iso(nbJ), p.date_debut, p.date_fin)).map(p => `
+    <div class="ligne evt"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3 12 2"/></svg>${esc(p.libelle)} · ${periodeCourte(p.date_debut, p.date_fin)}</div>`);
+  const lignes = abs.map(r => {
+    const ini = r.salarie.split(' ').map(x => x.charAt(0)).join('').toUpperCase();
+    const estMoi = r.salarie === moi;
+    return `<div class="ligne"><span class="avatar${estMoi ? ' moi' : ''}" aria-hidden="true">${esc(ini)}</span>
+      <div><div class="ligne-t">${esc(r.salarie)}${estMoi ? ' <span style="font-weight:500;color:#5d6782">(vous)</span>' : ''}</div>
+      <div class="ligne-s">${periodeCourte(r.date_debut, r.date_fin)}</div></div></div>`;
+  });
+  liste.innerHTML = evts.concat(lignes).join('') || '<div class="empty">Aucune absence validée ce mois-ci.</div>';
+}
+
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_IN') setTimeout(init, 0); });
+init();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('rh-sw.js').catch(() => {});
+</script>
+</body>
+</html>
