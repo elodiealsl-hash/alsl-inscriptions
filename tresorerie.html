@@ -14,7 +14,7 @@
 <nav class="topnav">
   <div class="brand">
     <img src="logo-alsl.jpg" alt="Logo ALSL">
-    <div><div class="brand-title">ALSL — Trésorerie</div><div class="brand-sub">Arrêts de travail à transmettre à la paie</div></div>
+    <div><div class="brand-title">ALSL — Trésorerie</div><div class="brand-sub">Notes de frais à rembourser · arrêts de travail pour la paie</div></div>
   </div>
   <div class="nav-right" id="nav-right"></div>
 </nav>
@@ -41,6 +41,24 @@
 </div>
 
 <div class="wrap hidden" id="ecran-tresorerie">
+  <div class="tabs">
+    <button class="tab active" data-tab="frais">Notes de frais<span class="count" id="nb-frais">0</span></button>
+    <button class="tab" data-tab="arrets">Arrêts de travail</button>
+  </div>
+
+  <section id="tab-frais">
+    <div class="card">
+      <div class="card-header"><h3>À rembourser</h3><span class="muted" id="total-frais"></span></div>
+      <div id="frais-a-rembourser"><div class="card-body muted">Chargement…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Remboursées</h3><span class="muted">30 dernières</span></div>
+      <div id="frais-remboursees"></div>
+    </div>
+    <span class="hint">Une note ne peut être remboursée ni par la personne qui l'a déposée, ni par celle qui l'a validée. Les notes de la trésorière sont remboursées par la vice-présidente.</span>
+  </section>
+
+  <section id="tab-arrets" class="hidden">
   <div class="alert alert-info" style="margin-bottom:1.25rem;">Données confidentielles : ces informations servent uniquement à la paie. Ne les transférez qu'au cabinet de paie ou à la comptable, et ne les conservez pas sur un support personnel.</div>
   <div class="card">
     <div class="card-header">
@@ -65,6 +83,7 @@
       <span class="hint">1. Téléchargez les volets 3 · 2. Préparez le mail (il s'ouvre dans votre messagerie, texte déjà rédigé) · 3. Joignez les fichiers téléchargés et envoyez.</span>
     </div>
   </div>
+  </section>
 </div>
 
 <script src="rh-commun.js"></script>
@@ -102,7 +121,94 @@ async function init() {
   const [t, v] = await Promise.all([sb.rpc('is_rh_tresorier'), sb.rpc('is_rh_valideur')]);
   if (!t.data && !v.data) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
   document.getElementById('ecran-tresorerie').classList.remove('hidden');
+  monId = session.user.id;
   charger();
+  chargerFrais();
+}
+
+// ---------- Onglets ----------
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('section[id^="tab-"]').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + t.dataset.tab));
+});
+
+// ---------- Notes de frais à rembourser ----------
+let monId = null, notesFrais = [], vehicules = [];
+const CAT_FRAIS = { km: 'Kilomètres', peage: 'Péage', parking: 'Parking', transport: 'Train, bus, avion',
+  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Fournitures, achats', autre: 'Autre' };
+const MODES_FRAIS = { virement: 'virement', cheque: 'chèque', especes: 'espèces' };
+const euro = n => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+
+async function chargerFrais() {
+  const [nf, fv] = await Promise.all([
+    sb.from('notes_frais').select('*, notes_frais_lignes(*)').in('statut', ['validee', 'remboursee']).order('valide_le', { ascending: true }),
+    sb.from('frais_vehicules').select('id, libelle, carte_grise_path')
+  ]);
+  if (nf.error) return toast('Erreur de chargement des notes : ' + nf.error.message, 'error');
+  notesFrais = nf.data || []; vehicules = fv.data || [];
+  rendreFrais();
+}
+function lignesNote(n) {
+  return (n.notes_frais_lignes || []).sort((a, b) => a.ordre - b.ordre).map(l => {
+    const v = vehicules.find(x => x.id === l.vehicule_id);
+    const pj = (l.justificatifs || []).map((j, i) => `<button type="button" class="btn btn-sm btn-outline" style="padding:.1rem .5rem;margin-left:.3rem;" onclick="ouvrirFichier('${esc(j)}')">Justificatif${l.justificatifs.length > 1 ? ' ' + (i + 1) : ''}</button>`).join('');
+    const cg = v ? `<button type="button" class="btn btn-sm btn-outline" style="padding:.1rem .5rem;margin-left:.3rem;" onclick="ouvrirFichier('${esc(v.carte_grise_path)}')">Carte grise</button>` : '';
+    return `<div class="muted" style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--gray-100);padding-top:.3rem;margin-top:.3rem;">
+      <span>${fmtDate(l.date)} · ${esc(CAT_FRAIS[l.categorie])}${l.km ? ` · ${Number(l.km).toLocaleString('fr-FR')} km${v ? ' (' + esc(v.libelle) + ')' : ''}` : ''}${l.libelle ? ' · ' + esc(l.libelle) : ''}${pj}${cg}</span>
+      <strong style="white-space:nowrap;">${euro(l.montant)}</strong></div>`;
+  }).join('');
+}
+function rendreFrais() {
+  const aFaire = notesFrais.filter(n => n.statut === 'validee' && !n.don_au_club);
+  const tot = aFaire.reduce((s, n) => s + Number(n.total), 0);
+  document.getElementById('nb-frais').textContent = aFaire.length;
+  document.getElementById('total-frais').textContent = aFaire.length ? `${aFaire.length} note(s) · ${euro(tot)}` : '';
+  document.getElementById('frais-a-rembourser').innerHTML = !aFaire.length ? '<div class="card-body muted">Aucune note à rembourser.</div>' : aFaire.map(n => {
+    const bloque = n.user_id === monId ? 'C\'est votre propre note : elle sera remboursée par la vice-présidente.'
+                 : n.valide_par === monId ? 'Vous avez validé cette note : une autre personne doit la rembourser.' : '';
+    return `<div class="list-item">
+      <div style="flex:1;min-width:0;">
+        <div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        ${lignesNote(n)}
+        <div class="muted" style="margin-top:.3rem;">Validée le ${n.valide_le ? fmtDate(n.valide_le.slice(0, 10)) : '—'}</div>
+        ${bloque ? `<div class="alert alert-info" style="margin-top:.5rem;">${bloque}</div>` : `
+        <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap;">
+          <select class="form-select" id="mode-${n.id}" style="width:auto;" aria-label="Mode de remboursement">
+            <option value="virement">Virement</option><option value="cheque">Chèque</option><option value="especes">Espèces</option>
+          </select>
+          <input class="form-input" id="ref-${n.id}" placeholder="Référence (n° de chèque, libellé du virement…)" maxlength="80" style="flex:1;min-width:200px;">
+        </div>`}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;align-items:flex-end;">
+        <strong style="font-size:1.1rem;white-space:nowrap;">${euro(n.total)}</strong>
+        ${bloque ? '' : `<button class="btn btn-sm btn-green" onclick="rembourser('${n.id}')">Marquer remboursée</button>`}
+      </div>
+    </div>`;
+  }).join('');
+  const faites = notesFrais.filter(n => n.statut === 'remboursee').sort((a, b) => (b.rembourse_le || '').localeCompare(a.rembourse_le || '')).slice(0, 30);
+  document.getElementById('frais-remboursees').innerHTML = !faites.length ? '<div class="card-body muted">Aucune note remboursée pour l\'instant.</div>' : faites.map(n => `
+    <div class="list-item">
+      <div><div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        <div class="muted">Remboursée le ${fmtDate(n.rembourse_le.slice(0, 10))} par ${MODES_FRAIS[n.mode_remboursement] || '—'}${n.reference_remboursement ? ' · ' + esc(n.reference_remboursement) : ''}</div></div>
+      <strong style="white-space:nowrap;">${euro(n.total)}</strong>
+    </div>`).join('');
+}
+async function rembourser(id) {
+  const n = notesFrais.find(x => x.id === id);
+  const mode = document.getElementById('mode-' + id).value;
+  const ref = document.getElementById('ref-' + id).value.trim() || null;
+  if (mode === 'cheque' && !ref) return toast('Indiquez le numéro du chèque.', 'error');
+  if (!confirm(`Confirmer le remboursement de ${euro(n.total)} à ${n.auteur_nom} par ${MODES_FRAIS[mode]} ?`)) return;
+  const { error } = await sb.rpc('rembourser_note_frais', { p_id: id, p_mode: mode, p_reference: ref });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Note marquée remboursée.');
+  chargerFrais();
+}
+async function ouvrirFichier(chemin) {
+  const fen = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('justificatifs-frais').createSignedUrl(chemin, 120);
+  if (error) { if (fen) fen.close(); return toast('Ouverture impossible : ' + error.message, 'error'); }
+  if (fen) fen.location = data.signedUrl; else window.location = data.signedUrl;
 }
 
 function changerMois(n) {
