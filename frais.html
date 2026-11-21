@@ -108,14 +108,41 @@
     <div class="main" id="mes-notes"></div>
   </section>
 
+  <!-- ===== Mes véhicules ===== -->
+  <section class="hidden" id="vue-vehicules">
+    <header class="head">
+      <h1>Mes véhicules</h1>
+      <div class="sub">Obligatoire pour les remboursements kilométriques</div>
+    </header>
+    <div class="main">
+      <div id="liste-vehicules" style="display:flex;flex-direction:column;gap:12px;"></div>
+      <form class="ligne-frais" id="form-vehicule" novalidate>
+        <strong>Ajouter un véhicule</strong>
+        <label class="label">Nom du véhicule<input type="text" class="field" id="v-libelle" maxlength="60" placeholder="Clio, voiture de mon conjoint…"></label>
+        <label class="label">Puissance fiscale (case P.6 de la carte grise)<select class="field select" id="v-cv"></select></label>
+        <label class="check"><input type="checkbox" id="v-elec"> Voiture 100 % électrique (+20 %)</label>
+        <label class="drop">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a5fa8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span id="v-cg-nom">Photo ou PDF de la carte grise</span>
+          <input type="file" id="v-cg" accept="image/*,application/pdf">
+        </label>
+        <p class="note">La carte grise peut être à votre nom ou à celui d'un membre de votre foyer. Vous pouvez masquer votre adresse : seuls le nom du titulaire, la puissance fiscale et l'énergie nous sont utiles. Elle n'est visible que par vous, la présidente, la vice-présidente et la trésorière.</p>
+        <button type="submit" class="cta navy" id="btn-vehicule">Enregistrer le véhicule</button>
+      </form>
+    </div>
+  </section>
+
   <!-- ===== Barre de navigation ===== -->
   <nav class="tabbar hidden" id="tabbar" aria-label="Navigation principale">
-    <div class="tabbar-in c2" id="tabbar-in">
+    <div class="tabbar-in c3" id="tabbar-in">
       <button type="button" class="tab" data-vue="nouvelle" aria-current="page">
         <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Nouvelle note
       </button>
       <button type="button" class="tab" data-vue="notes">
         <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2-3-2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>Mes notes
+      </button>
+      <button type="button" class="tab" data-vue="vehicules">
+        <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h14v-5l-2-5H7l-2 5v5z"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>Véhicules
       </button>
       <a href="rh.html" class="tab hidden" id="tab-rh">
         <span class="pastille"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Congés
@@ -141,11 +168,11 @@ const QUALITES = { salarie: 'Salarié(e)', benevole: 'Bénévole', membre_ca: 'M
 const MODES = { virement: 'virement', cheque: 'chèque', especes: 'espèces' };
 const euro = n => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 
-let profil = null, bareme = [], notes = [], lignes = [], filtre = 'toutes', userId = null, nextId = 1;
+let profil = null, bareme = [], vehicules = [], notes = [], lignes = [], filtre = 'toutes', userId = null, nextId = 1;
 
 // ---------- Navigation ----------
 function montrer(vue) {
-  ['nouvelle', 'notes'].forEach(v => document.getElementById('vue-' + v).classList.toggle('hidden', v !== vue));
+  ['nouvelle', 'notes', 'vehicules'].forEach(v => document.getElementById('vue-' + v).classList.toggle('hidden', v !== vue));
   document.querySelectorAll('.tab[data-vue]').forEach(t => {
     if (t.dataset.vue === vue) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
   });
@@ -183,39 +210,47 @@ async function init() {
   document.getElementById('qualite').textContent = `${QUALITES[profil.qualite]} · notes de frais ALSL`;
   if (profil.qualite === 'salarie') {
     document.getElementById('tab-rh').classList.remove('hidden');
-    document.getElementById('tabbar-in').className = 'tabbar-in c3';
+    document.getElementById('tabbar-in').className = 'tabbar-in c4';
   }
   if (DON_ACTIF && profil.qualite !== 'salarie') document.getElementById('bloc-don').classList.remove('hidden');
   document.getElementById('tabbar').classList.remove('hidden');
 
   const { data: b } = await sb.from('frais_bareme_km').select('*').order('cv');
   bareme = b || [];
+  document.getElementById('v-cv').innerHTML = '<option value="">Choisir…</option>' + bareme.map(x => `<option value="${x.cv}">${esc(x.libelle)}</option>`).join('');
+  await chargerVehicules();
   ajouterLigne();
   await charger();
-  montrer(location.hash === '#notes' ? 'notes' : 'nouvelle');
+  const h = location.hash.slice(1);
+  montrer(['notes', 'vehicules'].includes(h) ? h : 'nouvelle');
 }
 
 // ---------- Lignes de dépense ----------
-function cvMemo() { try { return localStorage.getItem('alsl_cv_' + userId) || ''; } catch (e) { return ''; } }
-function memoCv(v) { try { localStorage.setItem('alsl_cv_' + userId, v); } catch (e) {} }
+function vehMemo() {
+  let v = ''; try { v = localStorage.getItem('alsl_veh_' + userId) || ''; } catch (e) {}
+  if (!vehicules.some(x => x.id === v)) v = vehicules.length === 1 ? vehicules[0].id : '';
+  return v;
+}
+function memoVeh(v) { try { localStorage.setItem('alsl_veh_' + userId, v); } catch (e) {} }
 
 function ajouterLigne() {
   const d = document.getElementById('date_debut').value || new Date().toISOString().slice(0, 10);
-  lignes.push({ id: nextId++, categorie: 'km', date: d, libelle: '', km: '', cv: cvMemo(), electrique: false, montant: '', fichiers: [] });
+  lignes.push({ id: nextId++, categorie: 'km', date: d, libelle: '', km: '', vehicule: vehMemo(), montant: '', fichiers: [] });
   rendreLignes();
 }
 function suppr(id) { lignes = lignes.filter(l => l.id !== id); rendreLignes(); }
 function maj(id, champ, val) {
   const l = lignes.find(x => x.id === id);
   l[champ] = val;
-  if (champ === 'cv') memoCv(val);
+  if (champ === 'vehicule') memoVeh(val);
   if (champ === 'categorie') rendreLignes(); else majMontants();
 }
 function montantLigne(l) {
   if (l.categorie !== 'km') return Number(String(l.montant).replace(',', '.')) || 0;
-  const b = bareme.find(x => String(x.cv) === String(l.cv));
+  const v = vehicules.find(x => x.id === l.vehicule);
+  const b = v && bareme.find(x => x.cv === v.cv);
   const km = Number(String(l.km).replace(',', '.')) || 0;
-  return b ? Math.round(km * b.taux * (l.electrique ? 1 + Number(b.majoration_electrique) : 1) * 100) / 100 : 0;
+  return b ? Math.round(km * b.taux * (v.electrique ? 1 + Number(b.majoration_electrique) : 1) * 100) / 100 : 0;
 }
 function majMontants() {
   lignes.forEach(l => { const el = document.getElementById('m-' + l.id); if (el) el.textContent = euro(montantLigne(l)); });
@@ -223,8 +258,8 @@ function majMontants() {
 }
 function rendreLignes() {
   const optCat = v => Object.entries(CATEGORIES).map(([k, t]) => `<option value="${k}"${k === v ? ' selected' : ''}>${t}</option>`).join('');
-  const optCv = v => '<option value="">Puissance fiscale…</option>' + bareme.map(b =>
-    `<option value="${b.cv}"${String(b.cv) === String(v) ? ' selected' : ''}>${esc(b.libelle)} · ${nbTaux(b.taux)} €/km</option>`).join('');
+  const optVeh = v => '<option value="">Choisir le véhicule…</option>' + vehicules.map(x => { const b = bareme.find(y => y.cv === x.cv);
+    return `<option value="${x.id}"${x.id === v ? ' selected' : ''}>${esc(x.libelle)} · ${b ? esc(b.libelle) : x.cv + ' CV'}${x.electrique ? ' électrique' : ''}</option>`; }).join('');
   document.getElementById('lignes').innerHTML = lignes.map((l, i) => `
     <div class="ligne-frais">
       <div class="ligne-frais-top"><strong>Dépense ${i + 1}</strong><span class="montant" id="m-${l.id}">${euro(montantLigne(l))}</span></div>
@@ -236,8 +271,9 @@ function rendreLignes() {
           : `<label class="label">Montant (€)<input type="number" class="field" inputmode="decimal" min="0" step="0.01" value="${esc(l.montant)}" oninput="maj(${l.id},'montant',this.value)"></label>`}
       </div>
       ${l.categorie === 'km' ? `
-        <label class="label">Véhicule<select class="field select" onchange="maj(${l.id},'cv',this.value)">${optCv(l.cv)}</select></label>
-        <label class="check"><input type="checkbox" ${l.electrique ? 'checked' : ''} onchange="maj(${l.id},'electrique',this.checked)"> Voiture 100 % électrique (+20 %)</label>` : ''}
+        ${vehicules.length
+          ? `<label class="label">Véhicule<select class="field select" onchange="maj(${l.id},'vehicule',this.value)">${optVeh(l.vehicule)}</select></label>`
+          : `<div class="warn">Pour être remboursé(e) des kilomètres, enregistrez d'abord votre véhicule avec sa carte grise (une seule fois). <button type="button" class="mini" style="margin-top:8px;" onclick="montrer('vehicules')">Enregistrer mon véhicule</button></div>`}` : ''}
       <label class="label">Précision<input type="text" class="field" maxlength="120" value="${esc(l.libelle)}" placeholder="${l.categorie === 'km' ? 'Lambesc → Toulon' : 'Restaurant, hôtel…'}" oninput="maj(${l.id},'libelle',this.value)"></label>
       <label class="drop">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a5fa8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -281,7 +317,8 @@ document.getElementById('form-note').addEventListener('submit', async e => {
   if (!objet) return toast("Indiquez l'objet du déplacement.", 'error');
   if (!d1) return toast('Indiquez la date du déplacement.', 'error');
   for (const [i, l] of lignes.entries()) {
-    if (l.categorie === 'km' && (!l.cv || !(Number(l.km) > 0))) return toast(`Dépense ${i + 1} : indiquez les kilomètres et la puissance du véhicule.`, 'error');
+    if (l.categorie === 'km' && !vehicules.length) return toast("Enregistrez d'abord votre véhicule et sa carte grise (onglet Véhicules).", 'error');
+    if (l.categorie === 'km' && (!l.vehicule || !(Number(l.km) > 0))) return toast(`Dépense ${i + 1} : indiquez les kilomètres et le véhicule.`, 'error');
     if (l.categorie !== 'km' && !(montantLigne(l) > 0)) return toast(`Dépense ${i + 1} : indiquez le montant.`, 'error');
     if (l.categorie !== 'km' && !l.fichiers.length) return toast(`Dépense ${i + 1} : joignez le justificatif.`, 'error');
   }
@@ -292,8 +329,8 @@ document.getElementById('form-note').addEventListener('submit', async e => {
     for (const l of lignes) {
       const chemins = [];
       for (const f of l.fichiers) chemins.push(await envoyerFichier(f));
-      payload.push({ categorie: l.categorie, date: l.date || d1, libelle: l.libelle, km: l.km || null, cv: l.cv || null,
-        electrique: l.electrique, montant: l.categorie === 'km' ? null : montantLigne(l), justificatifs: chemins });
+      payload.push({ categorie: l.categorie, date: l.date || d1, libelle: l.libelle, km: l.km || null, vehicule_id: l.categorie === 'km' ? l.vehicule : null,
+        montant: l.categorie === 'km' ? null : montantLigne(l), justificatifs: chemins });
     }
     const { error } = await sb.rpc('soumettre_note_frais', {
       p_note: { objet, date_debut: d1, date_fin: d2, commentaire: document.getElementById('commentaire').value,
@@ -311,6 +348,66 @@ document.getElementById('form-note').addEventListener('submit', async e => {
     toast('Envoi impossible : ' + err.message, 'error');
   } finally { btn.disabled = false; }
 });
+
+// ---------- Mes véhicules ----------
+async function chargerVehicules() {
+  const { data, error } = await sb.from('frais_vehicules').select('*').eq('user_id', userId).eq('actif', true).order('created_at');
+  if (error) return toast('Erreur de chargement des véhicules : ' + error.message, 'error');
+  vehicules = data || [];
+  const el = document.getElementById('liste-vehicules');
+  el.innerHTML = !vehicules.length ? '<div class="empty">Aucun véhicule enregistré. Ajoutez-le une fois pour toutes ci-dessous.</div>' : vehicules.map(v => {
+    const b = bareme.find(x => x.cv === v.cv);
+    return `<div class="ligne">
+      <span class="avatar" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-5l-2-5H7l-2 5v5z"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></svg></span>
+      <div style="flex:1;min-width:0;"><div class="ligne-t">${esc(v.libelle)}</div><div class="ligne-s">${b ? esc(b.libelle) : v.cv + ' CV'}${v.electrique ? ' · électrique' : ''} · carte grise enregistrée</div></div>
+      <button type="button" class="mini" onclick="voirCarteGrise('${esc(v.carte_grise_path)}')">Voir</button>
+      <button type="button" class="mini danger" onclick="retirerVehicule('${v.id}')">Retirer</button>
+    </div>`;
+  }).join('');
+  if (lignes.length) { lignes.forEach(l => { if (!l.vehicule) l.vehicule = vehMemo(); }); rendreLignes(); }
+}
+document.getElementById('v-cg').addEventListener('change', e => {
+  const f = e.target.files[0];
+  document.getElementById('v-cg-nom').textContent = f ? f.name : 'Photo ou PDF de la carte grise';
+});
+document.getElementById('form-vehicule').addEventListener('submit', async e => {
+  e.preventDefault();
+  const libelle = document.getElementById('v-libelle').value.trim(), cv = Number(document.getElementById('v-cv').value);
+  const f = document.getElementById('v-cg').files[0];
+  if (!libelle) return toast('Donnez un nom au véhicule.', 'error');
+  if (!cv) return toast('Choisissez la puissance fiscale.', 'error');
+  if (!f) return toast('Joignez la carte grise.', 'error');
+  if (f.size > 10 * 1024 * 1024) return toast('Fichier trop lourd (10 Mo maximum).', 'error');
+  const btn = document.getElementById('btn-vehicule');
+  btn.disabled = true;
+  try {
+    const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const chemin = `${userId}/carte-grise/${crypto.randomUUID()}.${ext}`;
+    const up = await sb.storage.from('justificatifs-frais').upload(chemin, f, { contentType: f.type || undefined, upsert: false });
+    if (up.error) throw new Error(up.error.message);
+    const { data: id, error } = await sb.rpc('ajouter_vehicule_frais', { p_libelle: libelle, p_cv: cv, p_electrique: document.getElementById('v-elec').checked, p_carte_grise: chemin });
+    if (error) throw new Error(error.message);
+    memoVeh(id);
+    e.target.reset();
+    document.getElementById('v-cg-nom').textContent = 'Photo ou PDF de la carte grise';
+    toast('Véhicule enregistré : vous pouvez saisir vos kilomètres.');
+    await chargerVehicules();
+  } catch (err) { toast('Enregistrement impossible : ' + err.message, 'error'); }
+  finally { btn.disabled = false; }
+});
+async function voirCarteGrise(chemin) {
+  const fen = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('justificatifs-frais').createSignedUrl(chemin, 120);
+  if (error) { if (fen) fen.close(); return toast('Ouverture impossible : ' + error.message, 'error'); }
+  if (fen) fen.location = data.signedUrl; else window.location = data.signedUrl;
+}
+async function retirerVehicule(id) {
+  if (!confirm('Retirer ce véhicule ? Les notes déjà envoyées ne sont pas modifiées.')) return;
+  const { error } = await sb.rpc('retirer_vehicule_frais', { p_id: id });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast('Véhicule retiré.');
+  chargerVehicules();
+}
 
 // ---------- Mes notes ----------
 async function charger() {
