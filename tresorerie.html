@@ -54,7 +54,7 @@
           <div class="form-group" style="margin:0;"><label class="form-label" for="export-mois">Mois des remboursements</label><input type="month" class="form-input" id="export-mois" style="width:auto;"></div>
           <button class="btn btn-primary" id="btn-export" onclick="exporterMois()">Télécharger l'export (.zip)</button>
         </div>
-        <span class="hint" id="export-info">Le fichier contient le tableau Excel des dépenses (avec un récapitulatif) et tous les justificatifs renommés, rangés par note. Comptes comptables proposés à titre indicatif, à valider par la comptable.</span>
+        <span class="hint" id="export-info">Le fichier contient le tableau Excel des notes de frais et des juges payés (avec récapitulatifs et cumul annuel par juge), les justificatifs renommés et les signatures des juges. Comptes comptables proposés à titre indicatif, à valider par la comptable.</span>
       </div>
     </div>
     <div class="card">
@@ -229,7 +229,11 @@ async function exporterMois() {
     const { data: notes, error } = await sb.from('notes_frais').select('*, notes_frais_lignes(*)')
       .eq('statut', 'remboursee').gte('rembourse_le', debut).lt('rembourse_le', fin).order('numero');
     if (error) throw new Error(error.message);
-    if (!notes.length) { info.textContent = 'Aucune note remboursée sur ce mois.'; return toast('Aucune note remboursée sur ce mois.', 'error'); }
+    const dDeb = `${mois}-01`, dFin = `${y + (m === 12 ? 1 : 0)}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`;
+    const rj = await sb.from('etats_juges').select('*, etats_juges_lignes(*)').eq('statut', 'payee').gte('date_paiement', dDeb).lt('date_paiement', dFin).order('numero');
+    if (rj.error) throw new Error(rj.error.message);
+    const etatsJ = rj.data || [];
+    if (!notes.length && !etatsJ.length) { info.textContent = 'Aucune note remboursée ni juge payé sur ce mois.'; return toast('Rien à exporter sur ce mois.', 'error'); }
     const { data: veh } = await sb.from('frais_vehicules').select('*');
     const zip = new JSZip(), lignes = [], manquants = [];
     for (const n of notes) {
@@ -264,8 +268,37 @@ async function exporterMois() {
     const somme = arr => Math.round(arr.reduce((s, x) => s + x['Montant (€)'], 0) * 100) / 100;
     const grouper = cle => Object.entries(lignes.reduce((a, l) => ((a[l[cle]] = a[l[cle]] || []).push(l), a), {}))
       .map(([k, arr]) => ({ [cle]: k, 'Nombre de dépenses': arr.length, 'Total (€)': somme(arr) }));
+    // ----- Juges payés sur le mois -----
+    const ej = e => 'EJ' + String(e.numero || 0).padStart(3, '0');
+    const CREN = { demi: '½ journée', journee: 'Journée', journee_plus: 'Journée +' };
+    const lignesJ = [];
+    for (const e of etatsJ) for (const l of (e.etats_juges_lignes || []).filter(x => !x.annulee).sort((a, b) => a.ordre - b.ordre)) {
+      let preuve = l.salarie_club ? 'Salarié(e) : fiche de paie' : l.signature ? 'Signature électronique' : l.recu_papier ? 'Reçu papier (trésorière)' : (e.mode_paiement === 'especes' ? 'MANQUANT' : 'Relevé bancaire');
+      if (l.signature) {
+        const nomSig = `juges/${ej(e)}_${slug(l.juge_nom)}_signature.png`;
+        const b64 = l.signature.split(',')[1]; if (b64) zip.file(nomSig, b64, { base64: true });
+        preuve += ' — ' + nomSig.split('/')[1];
+      }
+      lignesJ.push({ 'N° état': ej(e), 'Compétition': e.evenement, 'Date': fr(e.date_evenement), 'Lieu': e.lieu, 'Organisateur': e.organisateur,
+        'Juge': l.juge_nom, 'Niveau': l.niveau, 'Créneau': CREN[l.creneau] || l.creneau, 'Montant (€)': Number(l.montant),
+        'Versement': l.salarie_club ? 'via la paie' : (MODES_FRAIS[e.mode_paiement] || ''), 'Payé le': l.signe_le ? fr(l.signe_le.slice(0, 10)) : fr(e.date_paiement),
+        'Remis par': l.signe_par_nom || '', 'Preuve': preuve, 'Compte proposé': l.salarie_club ? '641 Rémunérations (paie)' : '6228 Indemnités juges (à valider)' });
+    }
+    // Cumul de l'année par juge (hors salarié·es), seuil 14,5 % du PASS
+    let cumul = [];
+    if (lignesJ.length) {
+      const rc = await sb.from('etats_juges').select('etats_juges_lignes(juge_id, juge_nom, montant, annulee, salarie_club)').eq('statut', 'payee').gte('date_paiement', `${y}-01-01`).lt('date_paiement', dFin);
+      const parJ = {};
+      (rc.data || []).forEach(e => (e.etats_juges_lignes || []).filter(l => !l.annulee && !l.salarie_club).forEach(l => {
+        const k = l.juge_id || l.juge_nom; parJ[k] = parJ[k] || { nom: l.juge_nom, total: 0 }; parJ[k].total += Number(l.montant); }));
+      const seuil = Math.round(({ 2026: 48060 }[y] || 48060) * 0.145 * 100) / 100;
+      cumul = Object.values(parJ).sort((a, b) => b.total - a.total).map(p => [p.nom, Math.round(p.total * 100) / 100, seuil, p.total > seuil ? 'DÉPASSÉ' : '']);
+    }
+    const sommeJ = arr => Math.round(arr.reduce((t, x) => t + x['Montant (€)'], 0) * 100) / 100;
+    const jVerses = lignesJ.filter(l => l['Versement'] !== 'via la paie'), jPaie = lignesJ.filter(l => l['Versement'] === 'via la paie');
+
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(lignes);
+    const ws1 = XLSX.utils.json_to_sheet(lignes.length ? lignes : [{ 'N° note': 'Aucune note de frais remboursée ce mois-ci' }]);
     ws1['!cols'] = [8, 22, 13, 30, 12, 24, 22, 7, 22, 11, 38, 50, 12, 12, 10, 18].map(w => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws1, 'Dépenses');
     const recap = [[`ALSL — Notes de frais remboursées en ${new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`], [],
@@ -277,11 +310,25 @@ async function exporterMois() {
     const ws2 = XLSX.utils.aoa_to_sheet(recap);
     ws2['!cols'] = [{ wch: 55 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 18 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws2, 'Récapitulatif');
-    zip.file(`ALSL_Notes-de-frais_${mois}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+    if (lignesJ.length) {
+      const ws3 = XLSX.utils.json_to_sheet(lignesJ);
+      ws3['!cols'] = [8, 30, 11, 16, 16, 22, 7, 11, 11, 12, 11, 24, 48, 32].map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws3, 'Juges');
+      const recapJ = [[`ALSL — Indemnités de juges payées en ${new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`], [],
+        ['Total versé aux juges (€)', sommeJ(jVerses)], ['Dont espèces (€)', sommeJ(jVerses.filter(l => l['Versement'] === 'espèces'))],
+        ['À passer sur la paie (salarié·es) (€)', sommeJ(jPaie)], ['Nombre d\'états', etatsJ.length], [],
+        ['Déclaration Urssaf : sommes versées aux juges sous le seuil annuel → code CTP 024 (arbitres et juges, part exonérée).'], [],
+        [`Cumul ${y} par juge (paiements ALSL au ${new Date(y, m, 0).toLocaleDateString('fr-FR')})`], ['Juge', 'Cumul (€)', 'Seuil (€)', 'Alerte'], ...cumul];
+      const ws4 = XLSX.utils.aoa_to_sheet(recapJ);
+      ws4['!cols'] = [{ wch: 60 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+      XLSX.utils.book_append_sheet(wb, ws4, 'Juges - cumul');
+    }
+    zip.file(`ALSL_Frais-et-juges_${mois}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
     const contenu = await zip.generateAsync({ type: 'blob' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(contenu); a.download = `ALSL_Notes-de-frais_${mois}.zip`; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(contenu); a.download = `ALSL_Frais-et-juges_${mois}.zip`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    info.textContent = `Export prêt : ${notes.length} note(s), ${lignes.length} dépense(s), ${somme(lignes).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}.` +
+    info.textContent = `Export prêt : ${notes.length} note(s), ${lignes.length} dépense(s), ${somme(lignes).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}` +
+      (lignesJ.length ? ` · juges : ${etatsJ.length} état(s), ${sommeJ(jVerses).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} versés${jPaie.length ? `, ${sommeJ(jPaie).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} sur la paie` : ''}` : '') + '.' +
       (manquants.length ? ` Justificatifs introuvables : ${manquants.join(', ')}.` : '');
     toast('Export téléchargé.');
   } catch (err) {
