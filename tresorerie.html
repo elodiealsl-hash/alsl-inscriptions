@@ -48,6 +48,16 @@
 
   <section id="tab-frais">
     <div class="card">
+      <div class="card-header"><h3>Export pour la comptabilité</h3></div>
+      <div class="card-body">
+        <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+          <div class="form-group" style="margin:0;"><label class="form-label" for="export-mois">Mois des remboursements</label><input type="month" class="form-input" id="export-mois" style="width:auto;"></div>
+          <button class="btn btn-primary" id="btn-export" onclick="exporterMois()">Télécharger l'export (.zip)</button>
+        </div>
+        <span class="hint" id="export-info">Le fichier contient le tableau Excel des dépenses (avec un récapitulatif) et tous les justificatifs renommés, rangés par note. Comptes comptables proposés à titre indicatif, à valider par la comptable.</span>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-header"><h3>À rembourser</h3><span class="muted" id="total-frais"></span></div>
       <div id="frais-a-rembourser"><div class="card-body muted">Chargement…</div></div>
     </div>
@@ -116,7 +126,7 @@ async function init() {
   demarre = true;
   document.getElementById('ecran-connexion').classList.add('hidden');
   document.getElementById('nav-right').innerHTML =
-    `<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+    `<a class="btn btn-sm btn-ghost-light" href="juges.html">Juges</a><span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
   // Accès : trésorière, ou présidente en relais
   const [t, v] = await Promise.all([sb.rpc('is_rh_tresorier'), sb.rpc('is_rh_valideur')]);
   if (!t.data && !v.data) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
@@ -168,7 +178,7 @@ function rendreFrais() {
                  : n.valide_par === monId ? 'Vous avez validé cette note : une autre personne doit la rembourser.' : '';
     return `<div class="list-item">
       <div style="flex:1;min-width:0;">
-        <div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        <div><span class="badge badge-gray">${nf(n)}</span> <strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
         ${lignesNote(n)}
         <div class="muted" style="margin-top:.3rem;">Validée le ${n.valide_le ? fmtDate(n.valide_le.slice(0, 10)) : '—'}</div>
         ${bloque ? `<div class="alert alert-info" style="margin-top:.5rem;">${bloque}</div>` : `
@@ -188,11 +198,98 @@ function rendreFrais() {
   const faites = notesFrais.filter(n => n.statut === 'remboursee').sort((a, b) => (b.rembourse_le || '').localeCompare(a.rembourse_le || '')).slice(0, 30);
   document.getElementById('frais-remboursees').innerHTML = !faites.length ? '<div class="card-body muted">Aucune note remboursée pour l\'instant.</div>' : faites.map(n => `
     <div class="list-item">
-      <div><div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+      <div><div><span class="badge badge-gray">${nf(n)}</span> <strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
         <div class="muted">Remboursée le ${fmtDate(n.rembourse_le.slice(0, 10))} par ${MODES_FRAIS[n.mode_remboursement] || '—'}${n.reference_remboursement ? ' · ' + esc(n.reference_remboursement) : ''}</div></div>
       <strong style="white-space:nowrap;">${euro(n.total)}</strong>
     </div>`).join('');
 }
+const nf = n => 'NF' + String(n.numero || 0).padStart(3, '0');
+
+// ---------- Export comptable mensuel ----------
+const COMPTES = { km: '6251 Voyages et déplacements', peage: '6251 Voyages et déplacements', parking: '6251 Voyages et déplacements',
+  transport: '6251 Voyages et déplacements', repas: '6256 Missions (repas)', hebergement: '6256 Missions (hébergement)',
+  fournitures: '606 Achats non stockés (fournitures, goûters, petit matériel)', autre: '628 Divers (à qualifier)' };
+(function () { const d = new Date(); document.getElementById('export-mois').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+function chargerScript(src) {
+  return new Promise((ok, ko) => { if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('chargement impossible')); document.head.appendChild(s); });
+}
+const slug = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'x';
+const fr = d => d ? d.split('-').reverse().join('/') : '';
+async function exporterMois() {
+  const mois = document.getElementById('export-mois').value;
+  if (!mois) return toast('Choisissez le mois.', 'error');
+  const [y, m] = mois.split('-').map(Number);
+  const debut = new Date(y, m - 1, 1).toISOString(), fin = new Date(y, m, 1).toISOString();
+  const btn = document.getElementById('btn-export'), info = document.getElementById('export-info');
+  btn.disabled = true; info.textContent = 'Préparation de l\'export…';
+  try {
+    await chargerScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+    await chargerScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+    const { data: notes, error } = await sb.from('notes_frais').select('*, notes_frais_lignes(*)')
+      .eq('statut', 'remboursee').gte('rembourse_le', debut).lt('rembourse_le', fin).order('numero');
+    if (error) throw new Error(error.message);
+    if (!notes.length) { info.textContent = 'Aucune note remboursée sur ce mois.'; return toast('Aucune note remboursée sur ce mois.', 'error'); }
+    const { data: veh } = await sb.from('frais_vehicules').select('*');
+    const zip = new JSZip(), lignes = [], manquants = [];
+    for (const n of notes) {
+      const dossier = `${nf(n)}_${slug(n.auteur_nom)}_${slug(n.objet)}`;
+      const lg = (n.notes_frais_lignes || []).sort((a, b) => a.ordre - b.ordre);
+      for (const [i, l] of lg.entries()) {
+        const v = (veh || []).find(x => x.id === l.vehicule_id);
+        const fichiers = [];
+        for (const [k, chemin] of (l.justificatifs || []).entries()) {
+          const nom = `${mois}_${nf(n)}_${slug(n.auteur_nom)}_${i + 1}-${l.categorie}${l.justificatifs.length > 1 ? '_' + (k + 1) : ''}.${(chemin.split('.').pop() || 'jpg').toLowerCase()}`;
+          const { data: blob, error: e2 } = await sb.storage.from('justificatifs-frais').download(chemin);
+          if (e2) { manquants.push(nom); continue; }
+          zip.file(`justificatifs/${dossier}/${nom}`, blob); fichiers.push(nom);
+        }
+        if (v) {
+          const nomCg = `${nf(n)}_${slug(n.auteur_nom)}_carte-grise_${slug(v.libelle)}.${(v.carte_grise_path.split('.').pop() || 'jpg').toLowerCase()}`;
+          if (!zip.file(`justificatifs/${dossier}/${nomCg}`)) {
+            const { data: blob, error: e3 } = await sb.storage.from('justificatifs-frais').download(v.carte_grise_path);
+            if (e3) manquants.push(nomCg); else zip.file(`justificatifs/${dossier}/${nomCg}`, blob);
+          }
+        }
+        lignes.push({
+          'N° note': nf(n), 'Bénéficiaire': n.auteur_nom, 'Qualité': { salarie: 'Salarié(e)', benevole: 'Bénévole', membre_ca: 'Membre du CA' }[n.qualite] || n.qualite,
+          'Objet': n.objet, 'Date de la dépense': fr(l.date), 'Catégorie': CAT_FRAIS[l.categorie] || l.categorie, 'Précision': l.libelle || '',
+          'Km': l.km ? Number(l.km) : '', 'Véhicule': v ? `${v.libelle} (${l.cv === 7 ? '7 CV+' : l.cv + ' CV'}${l.electrique ? ', électrique' : ''})` : '',
+          'Montant (€)': Number(l.montant), 'Compte proposé': COMPTES[l.categorie] || '', 'Justificatifs': fichiers.join(' / ') || (l.categorie === 'km' ? 'barème km' : 'MANQUANT'),
+          'Validée le': n.valide_le ? fr(n.valide_le.slice(0, 10)) : '', 'Remboursée le': fr(n.rembourse_le.slice(0, 10)),
+          'Mode': MODES_FRAIS[n.mode_remboursement] || '', 'Référence': n.reference_remboursement || ''
+        });
+      }
+    }
+    const somme = arr => Math.round(arr.reduce((s, x) => s + x['Montant (€)'], 0) * 100) / 100;
+    const grouper = cle => Object.entries(lignes.reduce((a, l) => ((a[l[cle]] = a[l[cle]] || []).push(l), a), {}))
+      .map(([k, arr]) => ({ [cle]: k, 'Nombre de dépenses': arr.length, 'Total (€)': somme(arr) }));
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(lignes);
+    ws1['!cols'] = [8, 22, 13, 30, 12, 24, 22, 7, 22, 11, 38, 50, 12, 12, 10, 18].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws1, 'Dépenses');
+    const recap = [[`ALSL — Notes de frais remboursées en ${new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`], [],
+      ['Total remboursé (€)', somme(lignes)], ['Nombre de notes', notes.length], ['Nombre de dépenses', lignes.length], [],
+      ['Par compte proposé'], ...grouper('Compte proposé').map(r => [r['Compte proposé'], r['Total (€)']]), [],
+      ['Par bénéficiaire'], ...grouper('Bénéficiaire').map(r => [r['Bénéficiaire'], r['Total (€)']]), [],
+      ['Par note (rapprochement bancaire)'], ['N° note', 'Bénéficiaire', 'Remboursée le', 'Mode', 'Référence', 'Total (€)'],
+      ...notes.map(n => [nf(n), n.auteur_nom, fr(n.rembourse_le.slice(0, 10)), MODES_FRAIS[n.mode_remboursement] || '', n.reference_remboursement || '', Number(n.total)])];
+    const ws2 = XLSX.utils.aoa_to_sheet(recap);
+    ws2['!cols'] = [{ wch: 55 }, { wch: 22 }, { wch: 14 }, { wch: 10 }, { wch: 18 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Récapitulatif');
+    zip.file(`ALSL_Notes-de-frais_${mois}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+    const contenu = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(contenu); a.download = `ALSL_Notes-de-frais_${mois}.zip`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    info.textContent = `Export prêt : ${notes.length} note(s), ${lignes.length} dépense(s), ${somme(lignes).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}.` +
+      (manquants.length ? ` Justificatifs introuvables : ${manquants.join(', ')}.` : '');
+    toast('Export téléchargé.');
+  } catch (err) {
+    info.textContent = 'Export impossible : ' + err.message;
+    toast('Export impossible : ' + err.message, 'error');
+  } finally { btn.disabled = false; }
+}
+
 async function rembourser(id) {
   const n = notesFrais.find(x => x.id === id);
   const mode = document.getElementById('mode-' + id).value;
