@@ -135,7 +135,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
 // ---------- Notes de frais à rembourser ----------
 let monId = null, notesFrais = [], vehicules = [];
 const CAT_FRAIS = { km: 'Kilomètres', peage: 'Péage', parking: 'Parking', transport: 'Train, bus, avion',
-  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Fournitures, achats', autre: 'Autre' };
+  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Achats (goûters, papeterie, matériel)', autre: 'Autre' };
 const MODES_FRAIS = { virement: 'virement', cheque: 'chèque', especes: 'espèces' };
 const euro = n => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 
