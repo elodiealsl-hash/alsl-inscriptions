@@ -156,6 +156,10 @@
 // Option « don au club » (renonciation + reçu fiscal) : à activer quand le bureau l'aura confirmée
 const DON_ACTIF = false;
 
+// Règle du club (21/11/2026) : pas d'hôtel, de restaurant ni de transport pour les membres du CA ;
+// kilomètres uniquement pour aller chercher les courses ou le matériel d'une compétition.
+const INTERDITES_CA = ['repas', 'hebergement', 'transport'];
+const estCA = () => typeof profil !== 'undefined' && profil && profil.qualite === 'membre_ca';
 const CATEGORIES = {
   km: 'Kilomètres (voiture perso)', peage: 'Péage', parking: 'Parking', transport: 'Train, bus, avion',
   repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Achats (goûters, papeterie, petit matériel)', autre: 'Autre'
@@ -235,7 +239,7 @@ function memoVeh(v) { try { localStorage.setItem('alsl_veh_' + userId, v); } cat
 
 function ajouterLigne() {
   const d = document.getElementById('date_debut').value || new Date().toISOString().slice(0, 10);
-  lignes.push({ id: nextId++, categorie: 'km', date: d, libelle: '', km: '', vehicule: vehMemo(), montant: '', fichiers: [] });
+  lignes.push({ id: nextId++, categorie: estCA() ? 'fournitures' : 'km', date: d, libelle: '', km: '', vehicule: vehMemo(), montant: '', fichiers: [] });
   rendreLignes();
 }
 function suppr(id) { lignes = lignes.filter(l => l.id !== id); rendreLignes(); }
@@ -257,13 +261,14 @@ function majMontants() {
   document.getElementById('total').textContent = euro(lignes.reduce((s, l) => s + montantLigne(l), 0));
 }
 function rendreLignes() {
-  const optCat = v => Object.entries(CATEGORIES).map(([k, t]) => `<option value="${k}"${k === v ? ' selected' : ''}>${t}</option>`).join('');
+  const optCat = v => Object.entries(CATEGORIES).filter(([k]) => !estCA() || !INTERDITES_CA.includes(k) || k === v).map(([k, t]) => `<option value="${k}"${k === v ? ' selected' : ''}>${t}</option>`).join('');
   const optVeh = v => '<option value="">Choisir le véhicule…</option>' + vehicules.map(x => { const b = bareme.find(y => y.cv === x.cv);
     return `<option value="${x.id}"${x.id === v ? ' selected' : ''}>${esc(x.libelle)} · ${b ? esc(b.libelle) : x.cv + ' CV'}${x.electrique ? ' électrique' : ''}</option>`; }).join('');
   document.getElementById('lignes').innerHTML = lignes.map((l, i) => `
     <div class="ligne-frais">
       <div class="ligne-frais-top"><strong>Dépense ${i + 1}</strong><span class="montant" id="m-${l.id}">${euro(montantLigne(l))}</span></div>
       <label class="label">Type<select class="field select" onchange="maj(${l.id},'categorie',this.value)">${optCat(l.categorie)}</select></label>
+      ${estCA() && l.categorie === 'km' ? '<div class="info">Membres du CA : kilomètres remboursés uniquement pour aller chercher les courses ou le matériel d’une compétition. Précisez lesquels.</div>' : ''}
       <div class="grid2">
         <label class="label">Date<input type="date" class="field" value="${l.date}" onchange="maj(${l.id},'date',this.value)"></label>
         ${l.categorie === 'km'
@@ -317,6 +322,8 @@ document.getElementById('form-note').addEventListener('submit', async e => {
   if (!objet) return toast("Indiquez l'objet de la note.", 'error');
   if (!d1) return toast('Indiquez la date de la dépense.', 'error');
   for (const [i, l] of lignes.entries()) {
+    if (estCA() && INTERDITES_CA.includes(l.categorie)) return toast(`Dépense ${i + 1} : hôtel, restaurant et transport ne sont pas remboursés aux membres du CA.`, 'error');
+    if (estCA() && l.categorie === 'km' && !String(l.libelle || '').trim()) return toast(`Dépense ${i + 1} : précisez les courses ou le matériel de compétition transportés.`, 'error');
     if (l.categorie === 'km' && !vehicules.length) return toast("Enregistrez d'abord votre véhicule et sa carte grise (onglet Véhicules).", 'error');
     if (l.categorie === 'km' && (!l.vehicule || !(Number(l.km) > 0))) return toast(`Dépense ${i + 1} : indiquez les kilomètres et le véhicule.`, 'error');
     if (l.categorie !== 'km' && !(montantLigne(l) > 0)) return toast(`Dépense ${i + 1} : indiquez le montant.`, 'error');
