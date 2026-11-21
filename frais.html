@@ -435,6 +435,7 @@ function rendreNotes() {
     <article class="card${n.statut === 'annulee' ? ' off' : ''}">
       <div class="card-body">
         <div class="card-top"><span class="card-t">${esc(n.objet)}</span><span class="statut ${cls}">${lib}</span></div>
+        <span class="card-date">Note NF${String(n.numero || 0).padStart(3, '0')}</span>
         <div class="card-top"><span class="card-s">${fmtPeriode(n.date_debut, n.date_fin)}</span><span class="montant">${euro(n.total)}</span></div>
         ${lg.map(l => `<div class="detail"><span>${esc(CATEGORIES[l.categorie])}${l.km ? ` · ${Number(l.km).toLocaleString('fr-FR')} km` : ''}${l.libelle ? ' · ' + esc(l.libelle) : ''}${l.justificatifs.length ? ' · justificatif joint' : ''}</span><span>${euro(l.montant)}</span></div>`).join('')}
         ${n.reponse ? `<span class="card-rep">Réponse : « ${esc(n.reponse)} »</span>` : ''}
