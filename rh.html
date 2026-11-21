@@ -314,6 +314,7 @@ function rendreDemandes() {
         <div class="card-top"><span class="card-t">${esc(TYPES_RH[d.type] || d.type)}</span><span class="statut ${cls}">${lib}</span></div>
         <span class="card-s">${periodeCourte(d.date_debut, d.date_fin)} · ${jourTxt(d.nb_jours)}</span>
         ${d.commentaire ? `<span class="card-s">${esc(d.commentaire)}</span>` : ''}
+        ${d.saisie_par ? '<span class="card-s" style="font-weight:600;color:#1a2e5a;">Saisie par la présidence</span>' : ''}
         ${d.reponse ? `<span class="card-rep">Réponse : « ${esc(d.reponse)} »</span>` : ''}
         <div class="card-foot"><span class="card-date">Envoyée le ${fmtDate(d.created_at.slice(0, 10))}</span><span style="display:flex;gap:6px;flex-wrap:wrap;">${actions.join('')}</span></div>
       </div>
