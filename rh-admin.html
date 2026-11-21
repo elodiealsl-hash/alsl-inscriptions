@@ -267,7 +267,7 @@ async function init() {
   demarre = true;
   document.getElementById('ecran-connexion').classList.add('hidden');
   document.getElementById('nav-right').innerHTML =
-    `<span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
+    `<a class="btn btn-sm btn-ghost-light" href="juges.html">Juges</a><span>${esc(session.user.email)}</span><button class="btn btn-sm btn-ghost-light" onclick="deconnexion()">Déconnexion</button>`;
   const { data: ok } = await sb.rpc('is_rh_valideur');
   if (!ok) { document.getElementById('ecran-refus').classList.remove('hidden'); return; }
   document.getElementById('ecran-admin').classList.remove('hidden');
@@ -320,7 +320,7 @@ function rendreFrais() {
     const mienne = n.user_id === monId;
     return `<div class="list-item">
       <div style="flex:1;min-width:0;">
-        <div><strong>${esc(n.auteur_nom)}</strong> <span class="muted">(${QUAL_FRAIS[n.qualite]})</span> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        <div><span class="badge badge-gray">NF${String(n.numero || 0).padStart(3, '0')}</span> <strong>${esc(n.auteur_nom)}</strong> <span class="muted">(${QUAL_FRAIS[n.qualite]})</span> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
         ${detailNote(n)}
         <div style="display:flex;justify-content:space-between;margin-top:.4rem;"><span class="muted">Envoyée le ${fmtDate(n.created_at.slice(0, 10))}${n.don_au_club ? ' · <span class="badge badge-gold">don au club</span>' : ''}</span><strong>Total ${euro(n.total)}</strong></div>
         ${n.commentaire ? `<div class="muted">« ${esc(n.commentaire)} »</div>` : ''}
@@ -341,7 +341,7 @@ function rendreFrais() {
     `<div class="card-body" style="padding-bottom:0;"><strong>${suivi.length} note(s) · ${euro(tot)}</strong></div>` + suivi.map(n => `
     <div class="list-item">
       <div style="flex:1;min-width:0;">
-        <div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        <div><span class="badge badge-gray">NF${String(n.numero || 0).padStart(3, '0')}</span> <strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
         ${detailNote(n)}
         ${n.reponse ? `<div class="muted">Réponse : ${esc(n.reponse)}</div>` : ''}
         <div class="muted">${n.valide_le ? `Traitée le ${fmtDate(n.valide_le.slice(0, 10))}` : ''}${n.rembourse_le ? ` · remboursée le ${fmtDate(n.rembourse_le.slice(0, 10))} par ${MODES_FRAIS[n.mode_remboursement] || '—'}${n.reference_remboursement ? ' (' + esc(n.reference_remboursement) + ')' : ''}` : ''}${n.statut === 'validee' ? (n.don_au_club ? ' · don au club, pas de remboursement' : ' · remboursement par la trésorière') : ''}</div>
