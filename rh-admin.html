@@ -241,19 +241,20 @@ async function init() {
   await chargerTout();
 }
 
-let notesFrais = [], beneficiaires = [], monId = null;
+let notesFrais = [], beneficiaires = [], vehicules = [], monId = null;
 async function chargerTout() {
   if (!monId) { const { data: { user } } = await sb.auth.getUser(); monId = user && user.id; }
-  const [s, d, p, nf, bf] = await Promise.all([
+  const [s, d, p, nf, bf, fv] = await Promise.all([
     sb.from('salaries').select('*').order('prenom'),
     sb.from('demandes_rh').select('*').order('date_debut', { ascending: false }),
     sb.from('periodes_sensibles').select('*').order('date_debut'),
     sb.from('notes_frais').select('*, notes_frais_lignes(*)').order('date_debut', { ascending: false }),
-    sb.from('frais_beneficiaires').select('*').order('nom')
+    sb.from('frais_beneficiaires').select('*').order('nom'),
+    sb.from('frais_vehicules').select('*')
   ]);
-  const err = s.error || d.error || p.error || nf.error || bf.error;
+  const err = s.error || d.error || p.error || nf.error || bf.error || fv.error;
   if (err) return toast('Erreur de chargement : ' + err.message, 'error');
-  salaries = s.data; demandes = d.data; periodes = p.data; notesFrais = nf.data; beneficiaires = bf.data;
+  salaries = s.data; demandes = d.data; periodes = p.data; notesFrais = nf.data; beneficiaires = bf.data; vehicules = fv.data;
   rendreAttente(); rendrePlanning(); rendreHistorique(); rendreSalaries(); rendrePeriodes(); rendrePaie();
   rendreFrais(); rendreBenef();
 }
@@ -270,7 +271,8 @@ function detailNote(n) {
   return `<table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:.4rem;table-layout:fixed;"><colgroup><col style="width:88px"><col><col style="width:90px"></colgroup>${lg.map(l => `
     <tr style="border-top:1px solid var(--gray-100);">
       <td style="padding:.3rem .4rem .3rem 0;white-space:nowrap;">${fmtDate(l.date)}</td>
-      <td style="padding:.3rem .4rem;">${esc(CAT_FRAIS[l.categorie])}${l.km ? ` · ${Number(l.km).toLocaleString('fr-FR')} km (${l.cv === 7 ? '7 CV+' : l.cv + ' CV'}${l.electrique ? ', électrique' : ''})` : ''}${l.libelle ? ' · ' + esc(l.libelle) : ''}
+      <td style="padding:.3rem .4rem;">${esc(CAT_FRAIS[l.categorie])}${l.km ? ` · ${Number(l.km).toLocaleString('fr-FR')} km (${(vehicules.find(v => v.id === l.vehicule_id) || {}).libelle ? esc(vehicules.find(v => v.id === l.vehicule_id).libelle) + ', ' : ''}${l.cv === 7 ? '7 CV+' : l.cv + ' CV'}${l.electrique ? ', électrique' : ''})` : ''}
+        ${l.vehicule_id && vehicules.find(v => v.id === l.vehicule_id) ? `<button type="button" class="btn btn-sm btn-outline" style="padding:.1rem .5rem;margin-left:.3rem;" onclick="ouvrirJustif('${esc(vehicules.find(v => v.id === l.vehicule_id).carte_grise_path)}')">Carte grise</button>` : ''}${l.libelle ? ' · ' + esc(l.libelle) : ''}
         ${(l.justificatifs || []).map((j, i) => `<button type="button" class="btn btn-sm btn-outline" style="padding:.1rem .5rem;margin-left:.3rem;" onclick="ouvrirJustif('${esc(j)}')">Justificatif${l.justificatifs.length > 1 ? ' ' + (i + 1) : ''}</button>`).join('')}
         ${l.categorie !== 'km' && !(l.justificatifs || []).length ? ' <span class="badge badge-red">sans justificatif</span>' : ''}</td>
       <td style="padding:.3rem 0;text-align:right;white-space:nowrap;font-weight:600;">${euro(l.montant)}</td>
