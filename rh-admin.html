@@ -49,6 +49,8 @@
     <button class="tab" data-tab="paie">Paie du mois</button>
     <button class="tab" data-tab="salaries">Salariés</button>
     <button class="tab" data-tab="periodes">Périodes sensibles</button>
+    <button class="tab" data-tab="frais">Notes de frais<span class="count" id="nb-frais">0</span></button>
+    <button class="tab" data-tab="benef">Bénévoles et CA</button>
     <button class="btn btn-sm btn-outline" style="margin-left:auto;" onclick="chargerTout().then(() => toast('Données actualisées.'))">↻ Actualiser</button>
   </div>
 
@@ -144,6 +146,51 @@
       </form>
     </div>
   </section>
+
+  <section id="tab-frais" class="hidden">
+    <div class="card">
+      <div class="card-header"><h3>Notes de frais à valider</h3><a class="btn btn-sm btn-outline" href="frais.html" target="_blank" rel="noopener">Saisir une note</a></div>
+      <div id="frais-attente"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>Suivi</h3>
+        <select class="form-select" id="frais-filtre" style="width:auto;" onchange="rendreFrais()">
+          <option value="validee">Validées, à rembourser</option>
+          <option value="remboursee">Remboursées</option>
+          <option value="refusee">Refusées</option>
+          <option value="annulee">Annulées</option>
+        </select>
+      </div>
+      <div id="frais-suivi"></div>
+    </div>
+  </section>
+
+  <section id="tab-benef" class="hidden">
+    <div class="card">
+      <div class="card-header"><h3>Personnes autorisées à déposer des notes de frais</h3></div>
+      <div class="card-body" style="padding-bottom:0;"><div class="hint">Les salariés actifs sont autorisés d'office (onglet Salariés). Ajoutez ici les bénévoles et membres du CA. Ils se connectent sur <strong>alsl-inscriptions.vercel.app/frais.html</strong> avec l'adresse e-mail indiquée.</div></div>
+      <div id="liste-benef"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Ajouter une personne</h3></div>
+      <form id="form-benef">
+        <div class="card-body">
+          <div class="grid2">
+            <div class="form-group"><label class="form-label" for="b-prenom">Prénom</label><input class="form-input" id="b-prenom" required></div>
+            <div class="form-group"><label class="form-label" for="b-nom">Nom</label><input class="form-input" id="b-nom" required></div>
+          </div>
+          <div class="grid2">
+            <div class="form-group"><label class="form-label" for="b-email">E-mail (sert à la connexion)</label><input type="email" class="form-input" id="b-email" required></div>
+            <div class="form-group"><label class="form-label" for="b-qualite">Qualité</label>
+              <select class="form-select" id="b-qualite"><option value="benevole">Bénévole</option><option value="membre_ca">Membre du CA</option></select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  </section>
 </div>
 
 <script src="rh-commun.js"></script>
@@ -162,7 +209,7 @@ document.getElementById('mdp').addEventListener('keydown', e => { if (e.key === 
 // Actualisation automatique toutes les 2 minutes et au retour sur l'onglet
 // (sauf si une réponse est en cours de saisie, pour ne pas l'effacer)
 function autoActualiser() {
-  const saisie = [...document.querySelectorAll('#liste-attente input')].some(i => i.value.trim());
+  const saisie = [...document.querySelectorAll('#liste-attente input, #frais-attente input')].some(i => i.value.trim());
   if (demarre && !document.hidden && !saisie) chargerTout();
 }
 setInterval(autoActualiser, 120000);
@@ -194,17 +241,124 @@ async function init() {
   await chargerTout();
 }
 
+let notesFrais = [], beneficiaires = [], monId = null;
 async function chargerTout() {
-  const [s, d, p] = await Promise.all([
+  if (!monId) { const { data: { user } } = await sb.auth.getUser(); monId = user && user.id; }
+  const [s, d, p, nf, bf] = await Promise.all([
     sb.from('salaries').select('*').order('prenom'),
     sb.from('demandes_rh').select('*').order('date_debut', { ascending: false }),
-    sb.from('periodes_sensibles').select('*').order('date_debut')
+    sb.from('periodes_sensibles').select('*').order('date_debut'),
+    sb.from('notes_frais').select('*, notes_frais_lignes(*)').order('date_debut', { ascending: false }),
+    sb.from('frais_beneficiaires').select('*').order('nom')
   ]);
-  const err = s.error || d.error || p.error;
+  const err = s.error || d.error || p.error || nf.error || bf.error;
   if (err) return toast('Erreur de chargement : ' + err.message, 'error');
-  salaries = s.data; demandes = d.data; periodes = p.data;
+  salaries = s.data; demandes = d.data; periodes = p.data; notesFrais = nf.data; beneficiaires = bf.data;
   rendreAttente(); rendrePlanning(); rendreHistorique(); rendreSalaries(); rendrePeriodes(); rendrePaie();
+  rendreFrais(); rendreBenef();
 }
+
+// ---------- Notes de frais ----------
+const CAT_FRAIS = { km: 'Kilomètres', peage: 'Péage', parking: 'Parking', transport: 'Train, bus, avion',
+  repas: 'Repas', hebergement: 'Hébergement', fournitures: 'Fournitures, achats', autre: 'Autre' };
+const QUAL_FRAIS = { salarie: 'salarié(e)', benevole: 'bénévole', membre_ca: 'membre du CA' };
+const MODES_FRAIS = { virement: 'virement', cheque: 'chèque', especes: 'espèces' };
+const euro = n => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+
+function detailNote(n) {
+  const lg = (n.notes_frais_lignes || []).sort((a, b) => a.ordre - b.ordre);
+  return `<table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:.4rem;table-layout:fixed;"><colgroup><col style="width:88px"><col><col style="width:90px"></colgroup>${lg.map(l => `
+    <tr style="border-top:1px solid var(--gray-100);">
+      <td style="padding:.3rem .4rem .3rem 0;white-space:nowrap;">${fmtDate(l.date)}</td>
+      <td style="padding:.3rem .4rem;">${esc(CAT_FRAIS[l.categorie])}${l.km ? ` · ${Number(l.km).toLocaleString('fr-FR')} km (${l.cv === 7 ? '7 CV+' : l.cv + ' CV'}${l.electrique ? ', électrique' : ''})` : ''}${l.libelle ? ' · ' + esc(l.libelle) : ''}
+        ${(l.justificatifs || []).map((j, i) => `<button type="button" class="btn btn-sm btn-outline" style="padding:.1rem .5rem;margin-left:.3rem;" onclick="ouvrirJustif('${esc(j)}')">Justificatif${l.justificatifs.length > 1 ? ' ' + (i + 1) : ''}</button>`).join('')}
+        ${l.categorie !== 'km' && !(l.justificatifs || []).length ? ' <span class="badge badge-red">sans justificatif</span>' : ''}</td>
+      <td style="padding:.3rem 0;text-align:right;white-space:nowrap;font-weight:600;">${euro(l.montant)}</td>
+    </tr>`).join('')}</table>`;
+}
+function rendreFrais() {
+  const att = notesFrais.filter(n => n.statut === 'en_attente').sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const aMoi = att.filter(n => n.user_id !== monId);
+  document.getElementById('nb-frais').textContent = aMoi.length;
+  const el = document.getElementById('frais-attente');
+  el.innerHTML = !att.length ? '<div class="card-body muted">Aucune note de frais en attente.</div>' : att.map(n => {
+    const mienne = n.user_id === monId;
+    return `<div class="list-item">
+      <div style="flex:1;min-width:0;">
+        <div><strong>${esc(n.auteur_nom)}</strong> <span class="muted">(${QUAL_FRAIS[n.qualite]})</span> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        ${detailNote(n)}
+        <div style="display:flex;justify-content:space-between;margin-top:.4rem;"><span class="muted">Envoyée le ${fmtDate(n.created_at.slice(0, 10))}${n.don_au_club ? ' · <span class="badge badge-gold">don au club</span>' : ''}</span><strong>Total ${euro(n.total)}</strong></div>
+        ${n.commentaire ? `<div class="muted">« ${esc(n.commentaire)} »</div>` : ''}
+        ${mienne ? '<div class="alert alert-info" style="margin-top:.5rem;">Votre propre note : elle doit être validée par la vice-présidente.</div>'
+                 : `<input class="form-input" id="nfrep-${n.id}" placeholder="Réponse (conseillée en cas de refus)" style="margin-top:.5rem;" maxlength="300">`}
+      </div>
+      ${mienne ? '' : `<div style="display:flex;flex-direction:column;gap:.4rem;">
+        <button class="btn btn-sm btn-green" onclick="deciderFrais('${n.id}','validee')">Valider</button>
+        <button class="btn btn-sm btn-red" onclick="deciderFrais('${n.id}','refusee')">Refuser</button>
+      </div>`}
+    </div>`;
+  }).join('');
+
+  const f = document.getElementById('frais-filtre').value;
+  const suivi = notesFrais.filter(n => n.statut === f);
+  const tot = suivi.reduce((s, n) => s + Number(n.total), 0);
+  document.getElementById('frais-suivi').innerHTML = !suivi.length ? '<div class="card-body muted">Aucune note.</div>' :
+    `<div class="card-body" style="padding-bottom:0;"><strong>${suivi.length} note(s) · ${euro(tot)}</strong></div>` + suivi.map(n => `
+    <div class="list-item">
+      <div style="flex:1;min-width:0;">
+        <div><strong>${esc(n.auteur_nom)}</strong> · ${esc(n.objet)} · ${fmtPeriode(n.date_debut, n.date_fin)}</div>
+        ${detailNote(n)}
+        ${n.reponse ? `<div class="muted">Réponse : ${esc(n.reponse)}</div>` : ''}
+        <div class="muted">${n.valide_le ? `Traitée le ${fmtDate(n.valide_le.slice(0, 10))}` : ''}${n.rembourse_le ? ` · remboursée le ${fmtDate(n.rembourse_le.slice(0, 10))} par ${MODES_FRAIS[n.mode_remboursement] || '—'}${n.reference_remboursement ? ' (' + esc(n.reference_remboursement) + ')' : ''}` : ''}${n.statut === 'validee' ? (n.don_au_club ? ' · don au club, pas de remboursement' : ' · remboursement par la trésorière') : ''}</div>
+      </div>
+      <strong style="white-space:nowrap;">${euro(n.total)}</strong>
+    </div>`).join('');
+}
+async function deciderFrais(id, decision) {
+  const rep = document.getElementById('nfrep-' + id)?.value.trim() || null;
+  if (decision === 'refusee' && !rep && !confirm('Refuser sans donner de motif ?')) return;
+  const { error } = await sb.rpc('valider_note_frais', { p_id: id, p_decision: decision, p_reponse: rep });
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast(decision === 'validee' ? 'Note validée : la trésorière peut la rembourser.' : 'Note refusée.');
+  chargerTout();
+}
+async function ouvrirJustif(chemin) {
+  const fen = window.open('', '_blank');
+  const { data, error } = await sb.storage.from('justificatifs-frais').createSignedUrl(chemin, 120);
+  if (error) { if (fen) fen.close(); return toast('Ouverture impossible : ' + error.message, 'error'); }
+  if (fen) fen.location = data.signedUrl; else window.location = data.signedUrl;
+}
+
+// ---------- Bénévoles et CA ----------
+function rendreBenef() {
+  const el = document.getElementById('liste-benef');
+  el.innerHTML = !beneficiaires.length ? '<div class="card-body muted">Personne pour l\'instant.</div>' : beneficiaires.map(b => `
+    <div class="list-item">
+      <div><strong>${esc(b.prenom)} ${esc(b.nom)}</strong> ${b.actif ? '' : '<span class="badge badge-gray">désactivé</span>'}
+        <div class="muted">${b.qualite === 'membre_ca' ? 'Membre du CA' : 'Bénévole'} · ${esc(b.email)}</div></div>
+      <button class="btn btn-sm btn-outline" onclick="basculerBenef('${b.id}', ${!b.actif})">${b.actif ? 'Désactiver' : 'Réactiver'}</button>
+    </div>`).join('');
+}
+async function basculerBenef(id, actif) {
+  const { error } = await sb.from('frais_beneficiaires').update({ actif }).eq('id', id);
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  toast(actif ? 'Accès réactivé.' : 'Accès désactivé : cette personne ne peut plus déposer de note.');
+  chargerTout();
+}
+document.getElementById('form-benef').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = document.getElementById('b-email').value.trim().toLowerCase();
+  if (salaries.some(s => s.actif && s.email.toLowerCase() === email)) return toast('Cette adresse est celle d\'un salarié : il est déjà autorisé.', 'error');
+  const { error } = await sb.from('frais_beneficiaires').insert({
+    prenom: document.getElementById('b-prenom').value.trim(), nom: document.getElementById('b-nom').value.trim(),
+    email, qualite: document.getElementById('b-qualite').value
+  });
+  if (error && error.code === '23505') return toast('Cette adresse e-mail est déjà enregistrée.', 'error');
+  if (error) return toast('Erreur : ' + error.message, 'error');
+  e.target.reset();
+  toast('Personne ajoutée : elle peut se connecter sur frais.html.');
+  chargerTout();
+});
 
 // ---------- Paie du mois ----------
 let moisPaie = new Date();
